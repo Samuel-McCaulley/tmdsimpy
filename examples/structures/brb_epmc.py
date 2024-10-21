@@ -166,10 +166,10 @@ default_fast_sol = 0
 # with the script 'compare_brb_epmc.py' after running. 
 
 # Log10 Amplitude Start (mass normalized modal amplitude)
-Astart = -7.7
+Astart = -7.0
 
 # Log10 Amplitude End
-Aend = -4.2
+Aend = -5.5
 
 # Choose speed or accuracy - edit other parameters based on which value
 # of this flag you are using.
@@ -718,7 +718,7 @@ CtoP[-3:-1] = np.abs(Uwxa0[-3:-1])
 
 # scale so step size is similar order as fraction of total distance from 
 # start to end
-CtoP[-1] = np.abs(Aend-Astart) 
+CtoP[-1] = np.abs(Aend-Astart)
 
 cont_solver = Continuation(epmc_solver, ds0=ds, CtoP=CtoP, 
                            config=continue_config)
@@ -752,3 +752,6 @@ if Uwxa_full[-1][-1] < Aend and epmc_config['reform_freq'] > 1:
 
 # # This needs to be uncommented to open up the debug terminal.
 # import pdb; pdb.set_trace()
+
+
+np.save("./results/Uwxa_full.npy", Uwxa_full)

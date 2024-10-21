@@ -101,7 +101,6 @@ def continuation_save(XlamP, dirP_prev, fname):
     if exists(fname):
         # Load previous solutions + Augment
         loaded = np.load(fname, allow_pickle=False)
-        
         XlamP_full = np.vstack((loaded['XlamP'], XlamP.reshape(1,-1)))
         dirP_prev_full = np.vstack((loaded['dirP_prev'], dirP_prev.reshape(1,-1)))
         

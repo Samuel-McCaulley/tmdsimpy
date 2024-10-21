@@ -32,7 +32,7 @@ class BoucWenForce(HystereticForce):
         self.rho = self.A/self.z0
         self.sigma = self.beta/(self.beta + self.gamma)
         
-    def init_history(self):
+    def init_history(self, u0=0, udot0=0):
         """
         Method to initialize history variables for the hysteretic model.
         
@@ -45,8 +45,8 @@ class BoucWenForce(HystereticForce):
 
         """
         
-        self.up = 0
-        self.udotp = 0
+        self.up = u0
+        self.udotp = udot0
         self.fp = 0
         
         return
@@ -54,7 +54,7 @@ class BoucWenForce(HystereticForce):
     
     def init_history_harmonic(self, unlth0, h=np.array([0])):
         
-        self.up =unlth0
+        self.up = unlth0
         self.fp = 0
         self.dupduh = np.zeros((hutils.Nhc(h)))
         self.dupduh[0] = 1 #?
@@ -84,9 +84,9 @@ class BoucWenForce(HystereticForce):
         
         unl = self.Q @ X
         
-        fnl, dfnldunl, dfnlsliders_dunl = self.instant_force(unl, 
-                                                    np.zeros_like(unl),
-                                                    update_prev=update_hist)
+        fnl, dfnldunl = self.instant_force(unl, 
+                                           np.zeros_like(unl),
+                                           update_prev=update_hist)
         
         fnl = np.atleast_1d(fnl)
         dfnldunl = np.atleast_2d(dfnldunl)
