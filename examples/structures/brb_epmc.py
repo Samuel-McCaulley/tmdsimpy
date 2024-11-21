@@ -166,10 +166,10 @@ default_fast_sol = 0
 # with the script 'compare_brb_epmc.py' after running. 
 
 # Log10 Amplitude Start (mass normalized modal amplitude)
-Astart = -7.0
+Astart = -7.7
 
 # Log10 Amplitude End
-Aend = -5.5
+Aend = -4.2
 
 # Choose speed or accuracy - edit other parameters based on which value
 # of this flag you are using.

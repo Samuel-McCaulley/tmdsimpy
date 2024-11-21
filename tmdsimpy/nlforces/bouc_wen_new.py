@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Tue Nov 12 09:54:54 2024
+
+@author: samuelmccaulley
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 Created on Mon Sep 16 10:55:07 2024
 
 @author: samuelmccaulley
@@ -14,29 +22,18 @@ from .nonlinear_force import HystereticForce
 from ..utils import harmonic as hutils
 
 
-class BoucWenForce(HystereticForce):
+class BoucWenForceNew(HystereticForce):
     
     
-    def __init__(self, Q, T, A, beta, gamma, n):
-        
+    def __init__(self, Q, T, A, alpha, beta, n):
         self.Q = Q
         self.T = T
         self.A = A
+        self.alpha = alpha
         self.beta = beta
-        self.gamma = gamma
         self.n = n
-    
-        #Derived Parameters
         
-        self.z0 = (self.A/(self.beta + self.gamma))**(1/self.n)
-        
-
-        self.rho = self.A/self.z0
-        assert self.rho > 0, "Incorrect Formulation of rho"
-        
-        self.sigma = self.beta/(self.beta + self.gamma)
-        
-        assert self.sigma >= 0, "Incorrect formulation of sigma"
+        assert Q.shape[1] == 1, 'Not tested for simultaneous Bouc-Wen Elements'
         
         self.init_history()
         
@@ -52,11 +49,12 @@ class BoucWenForce(HystereticForce):
         None.
 
         """
-        
         self.up = u0
         self.udotp = udot0
         self.fp = 0
         
+        
+
         return
     
     
@@ -106,35 +104,46 @@ class BoucWenForce(HystereticForce):
         
         return F, dFdX
        
-    def dzetadunl_fun(self, unl, zeta, unldot):
-        df = self.rho * (1 - (self.sigma * np.sign(zeta) * np.sign(unldot) + (1 - self.sigma)) * np.abs(zeta)**self.n)
-        return df
+    def bouc_wen_slope(self, u, f, udot):
+        '''
+            Function that returns the function used for bouc-wen ODE solving
+            
+            Not sure why this is written like this in matlab
+        '''
+        slope = self.A - (self.alpha*np.sign(f*udot) - self.beta)*np.abs(f)**self.n
+        
+        
+        return slope
 
     def instant_force(self, unl, unldot, update_prev=False):
         # Initial conditions for unl and f
-        unl_0 = self.up
-        f0 = self.fp
         
-        # Define the ODE as a lambda to fix the argument issue
-        ode_fun = lambda unl, zeta: self.dzetadunl_fun(unl, zeta, unldot)
         
-        # Solve the ODE from unl_0 to unl with initial condition f0
-        solution_zeta = solve_ivp(ode_fun, [unl_0, unl], [f0/self.z0], dense_output=True)
+        unl_curr = unl
+        unldot_curr = unldot
         
-        # Extract the final value of f at unl
-        zeta = solution_zeta.y[0][-1]
+        unl = unl_curr - self.up
+        unldot = unldot_curr - self.udotp
         
-        fnl = zeta * self.z0
+        function_g = lambda u, f : self.bouc_wen_slope(u, f, unldot_curr)
         
-        # Compute dfnldunl at the final value of unl
-        dfnldunl = self.dzetadunl_fun(unl, fnl, unldot)*self.z0
         
-        # Update previous state if necessary
+        y = solve_ivp(function_g, [0, unl], np.atleast_1d(0))['y']
+        
         if update_prev:
-            self.up = unl
+            self.up = unl_curr
+            self.udotp = unldot_curr
+        
+        fnl = y[-1, -1] + self.fp
+        
+        if update_prev:
             self.fp = fnl
+            
+        dfnldunl = function_g(unl, fnl)
         
         return fnl, dfnldunl
+    
+    
     
     def instant_force_harmonic(self, unl, unldot, h, cst, update_prev = False):
         

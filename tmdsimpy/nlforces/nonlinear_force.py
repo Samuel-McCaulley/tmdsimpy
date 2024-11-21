@@ -544,7 +544,7 @@ class HystereticForce(NonlinearForce):
     # Write a slightly different AFT than instant since have derivatives output
     # w.r.t. harmonic coefs rather than u.
     def aft(self, U, w, h, Nt=128, tol=1e-7, max_repeats=2, atol=1e-10, 
-            rtol=1e-10):
+            rtol=1e-10, calc_grad = False):
         """
         Implementation of the alternating frequency-time method to extract 
         harmonic nonlinear force coefficients (hysteretic forces).
@@ -578,6 +578,8 @@ class HystereticForce(NonlinearForce):
             Relative tolerance on `local_force_history` force convergence 
             to steady-state (final state of cycle).
             The default is 1e-10.
+        calc_grad : boolean, optional
+            NOT VERIFIED -- ADDED BY sam SO Continuation so residual functions could work
 
         Returns
         -------

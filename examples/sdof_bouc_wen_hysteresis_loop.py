@@ -138,56 +138,55 @@ plt.title(f"Bouc-Wen Hysteretic Curve")
 plt.xlabel("u")
 plt.ylabel("F")
 plt.legend(loc = 'upper right')
-        
-# =============================================================================
-# n = 1.5
-# gammas = np.linspace(0.1, 10, 10)
-# 
-# for i, gamma in enumerate(gammas):
-#     bouc_wen_force = BoucWenForce(Q, T, A, beta, gamma, n)
-#     
-#     vib_sys = VibrationSystem(M, K, ab=ab_damp)
-#     solver = NonlinearSolver()
-# 
-#     fmag = 1
-#     h = np.array(range(h_max +1))
-#     t_steps = np.linspace(0, 100, 1000)
-# 
-#     # Setup
-#     Ndof = 1
-#     Nhc = hutils.Nhc(h) # Number of Harmonic Components (2*h_max + 1)
-# 
-#     Fl = np.zeros(Nhc*Ndof)
-#     Fl[1] = 1
-#     vib_sys.add_nl_force(bouc_wen_force)
-# 
-#     
-#     color = cmap(i / (len(ns) - 1))
-#     fun = lambda U : vib_sys.hbm_res(np.hstack((U, lam)), fmag*Fl, h, Nt=Nt)[0:2]
-#     # Initial Nonlinear Solution Point
-#     
-#     U0 = np.zeros_like(Fl)
-#     
-#     X, R, dRdX, sol = solver.nsolve(fun, fmag*U0)
-#     #Create time history
-# 
-#     x_t = np.array([harmonic_displacement(X, lam, t) for t in t_steps]).reshape(-1, 1)
-#     xdot_t = np.array([harmonic_velocity(X, lam, t) for t in t_steps]).reshape(-1, 1)
-#     
-#     cst = np.ones([len(t_steps), Nhc])
-#     
-#     forces = bouc_wen_force.local_force_history(x_t, xdot_t, h, cst, X[0])
-#     
-#     plt.plot(x_t, forces[0], label = f"n = {n:.3f}", color = color)
-# 
-# =============================================================================
 
-# =============================================================================
-# plt.title(f"Bouc-Wen Hysteretic Curve")
-# plt.xlabel("u")
-# plt.ylabel("F")
-# plt.legend(loc = 'upper right')
-# =============================================================================
+plt.show()
+
+n = 1.5
+gammas = np.linspace(0.1, 10, 10)
+
+for i, gamma in enumerate(gammas):
+    bouc_wen_force = BoucWenForce(Q, T, A, beta, gamma, n)
+    
+    vib_sys = VibrationSystem(M, K, ab=ab_damp)
+    solver = NonlinearSolver()
+
+    fmag = 1
+    h = np.array(range(h_max +1))
+    t_steps = np.linspace(0, 100, 1000)
+
+    # Setup
+    Ndof = 1
+    Nhc = hutils.Nhc(h) # Number of Harmonic Components (2*h_max + 1)
+
+    Fl = np.zeros(Nhc*Ndof)
+    Fl[1] = 1
+    vib_sys.add_nl_force(bouc_wen_force)
+
+    
+    color = cmap(i / (len(ns) - 1))
+    fun = lambda U : vib_sys.hbm_res(np.hstack((U, lam)), fmag*Fl, h, Nt=Nt)[0:2]
+    # Initial Nonlinear Solution Point
+    
+    U0 = np.zeros_like(Fl)
+    
+    X, R, dRdX, sol = solver.nsolve(fun, fmag*U0)
+    #Create time history
+
+    x_t = np.array([harmonic_displacement(X, lam, t) for t in t_steps]).reshape(-1, 1)
+    xdot_t = np.array([harmonic_velocity(X, lam, t) for t in t_steps]).reshape(-1, 1)
+    
+    cst = np.ones([len(t_steps), Nhc])
+    
+    forces = bouc_wen_force.local_force_history(x_t, xdot_t, h, cst, X[0])
+    
+    plt.plot(x_t, forces[0], label = f"gamma = {gamma:.3f}", color = color)
+
+
+plt.title(f"Bouc-Wen Hysteretic Curve")
+plt.xlabel("u")
+plt.ylabel("F")
+plt.legend(loc = 'upper right')
+plt.show()
         
 
 
