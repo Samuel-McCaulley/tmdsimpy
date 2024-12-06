@@ -17,6 +17,7 @@ from tmdsimpy.continuation import Continuation
 import matplotlib.pyplot as plt
 
 
+
 ###############################################################################
 ####### 1. Load System Matrices                                         #######
 ###############################################################################
@@ -72,6 +73,7 @@ for i in range(Nnl):
         print(f"Alog: {np.log10(A)}")
         print(f"betalog: {np.log10(beta)}")
         print(f"gammalog: {np.log10(gamma)}")
+        print(f"n: {n}")
     
     tmp_nl_force = None
     if i % 3 == 0 or i % 3 == 1: #x or y 
@@ -85,8 +87,8 @@ for i in range(Nnl):
     vib_sys.add_nl_force(tmp_nl_force)
 
 
-Astart = -10
-Aend = -6
+Astart = -9
+Aend = -4.7
 
 # Normal - settings for higher accuracy as used in previous papers
 h_max = 3 # harmonics 0, 1, 2, 3
@@ -97,8 +99,7 @@ dsmax = 0.125*1.4
 dsmin = 0.02
 # Adjust weighting of amplitude v. other in continuation to hopefully 
 # reduce turning around. Higher puts more emphasis on continuation 
-# parameter (amplitude)
-FracLam = 0.75
+# parameter (amplitudFracLam = 0.9
 ###############################################################################
 ####### 3. Prestress Analysis                                           #######
 ###############################################################################
@@ -205,6 +206,7 @@ Nhc = hutils.Nhc(h)
 
 Ndof = vib_sys.M.shape[0]
 
+
 Fl = np.zeros(Nhc*Ndof)
 
 # Static Forces
@@ -261,8 +263,8 @@ continue_config = {'DynamicCtoP': True,
                    'MaxSteps'   : 250, # May need more depending on ds and dsmin
                    'dsmin'      : dsmin,
                    'dsmax'      : dsmax,
-                   'verbose'    : 100,
-                   'xtol'       : 1e-6*np.sqrt(Uwxa0.shape[0]), 
+                   'verbose'    : 1,
+                   'xtol'       : 1e-7*np.sqrt(Uwxa0.shape[0]), 
                    'corrector'  : 'Ortho', # Ortho, Pseudo
                    'nsolve_verbose' : True,
                    'FracLam' : FracLam,
@@ -310,7 +312,7 @@ amps = Uwxa_full[:, -1]
 plt.plot(amps, freqs)
 plt.xlabel("Log Modal Amplitude")
 plt.ylabel("Natural Frequency")
-plt.title(np.array2string(np.round(lparams, 5)))
+plt.title("Bouc-Wen: " + np.array2string(np.round(lparams, 5)))
 plt.show()
 
 np.save('data/Uwxa_full_bouc.npy', Uwxa_full)

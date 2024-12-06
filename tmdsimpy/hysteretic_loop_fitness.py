@@ -54,7 +54,7 @@ def hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, t
     try:
     
         signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(25)
+        signal.alarm(10)
         
         ref_time, ref_displacement, ref_forces = nlutils.hysteresis_loop(Nt, h, X0, lam, ref_model, ref_parameters, loops = refloop)
         test_time, test_displacement, test_forces = nlutils.hysteresis_loop(Nt, h, X0, lam, test_model, test_parameters, loops = testloop)
@@ -75,7 +75,15 @@ def hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, t
             print(f"Weighted norm of error: {weighted_norm}")
         
         signal.alarm(0)
-            
+        
+        try:
+            regularization = config['regularization']
+            if regularization == 'lasso':
+                weighted_norm *= (1 + np.sum(np.abs(test_lparameters))/1000)
+                print("regular")
+        except:
+            weighted_norm = weighted_norm
+        
         return -1 * weighted_norm
         
     except TimeoutException:
@@ -120,6 +128,11 @@ def hysteretic_loop_plural_fitness(ref_model, ref_lparameters, ref_lpsci, test_m
         testloop = config['testloop']
     except:
         testloop = 1
+        
+    try: 
+        regularization = config['regularization']
+    except:
+        regularization = None
     
     ref_parameters = nlutils.paramexp(ref_lparameters, ref_lpsci)
     test_parameters = nlutils.paramexp(test_lparameters, test_lpsci)
@@ -133,7 +146,8 @@ def hysteretic_loop_plural_fitness(ref_model, ref_lparameters, ref_lpsci, test_m
             'lam'   : lams[dof],
             'weights': weights,
             'verbose': True,
-            'testloop': 12
+            'testloop': 12,
+            'regularization': regularization
             }
 
         dof_fitness = hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, test_lparameters, test_lpsci, singular_config)
@@ -146,6 +160,8 @@ def hysteretic_loop_plural_fitness(ref_model, ref_lparameters, ref_lpsci, test_m
         force_norm = np.linalg.norm(ref_forces)
         
         dof_fitness /= force_norm
+        
+        if print_fitness: print(f"Dof {dof} Fitness: {dof_fitness}")
         
         total_fitness += dof_fitness
     if print_fitness: print(f"Fitness: {total_fitness}")

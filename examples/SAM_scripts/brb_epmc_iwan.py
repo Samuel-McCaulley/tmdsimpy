@@ -8,7 +8,6 @@ from tmdsimpy.vibration_system import VibrationSystem
 from tmdsimpy.nlforces.vector_iwan4 import VectorIwan4
 from tmdsimpy.nlforces.general_poly_stiffness import GenPolyForce
 from tmdsimpy.solvers import NonlinearSolver
-from tmdsimpy.jax.solvers import NonlinearSolverOMP
 import tmdsimpy.nlutils as hutils_sam
 
 import tmdsimpy.utils.harmonic as hutils
@@ -301,7 +300,7 @@ amps = Uwxa_full[:, -1]
 plt.plot(amps, freqs)
 plt.xlabel("Log Modal Amplitude")
 plt.ylabel("Natural Frequency")
-plt.title(np.array2string(np.round(lparams, 5)))
+plt.title("Iwan: " + np.array2string(np.round(lparams, 5)))
 plt.show()
 
 np.save('data/Uwxa_full_iwan.npy', Uwxa_full)
@@ -309,7 +308,7 @@ np.save('data/Uwxa_full_iwan.npy', Uwxa_full)
 ## Plot a hysteresis loop
 
 
-dof = 7
+dof = 9
 line = 50
 X0 = np.atleast_2d(Uwxa_full[line, dof:-3:Ndof]).T*(10**Uwxa_full[line, -1])
 

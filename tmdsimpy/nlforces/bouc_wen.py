@@ -12,6 +12,25 @@ from .nonlinear_force import HystereticForce
 
 # Harmonic Functions for AFT
 from ..utils import harmonic as hutils
+import time
+
+import signal
+import warnings
+
+
+# Define a custom timeout exception
+class TimeoutException(Exception):
+    pass
+
+# Define the timeout handler
+def timeout_handler(signum, frame):
+    print("Timeout occurred!")
+    # Access local variables in the frame
+    local_vars = frame.f_locals
+    print("Local variables in the function at timeout:")
+    for var, val in local_vars.items():
+        print(f"{var}: {val}")
+    raise TimeoutError("Function execution exceeded the time limit!")
 
 
 class BoucWenForce(HystereticForce):
@@ -32,6 +51,7 @@ class BoucWenForce(HystereticForce):
         
 
         self.rho = self.A/self.z0
+        
         assert self.rho > 0, "Incorrect Formulation of rho"
         
         self.sigma = self.beta/(self.beta + self.gamma)
@@ -107,7 +127,28 @@ class BoucWenForce(HystereticForce):
         return F, dFdX
        
     def dzetadunl_fun(self, unl, zeta, unldot):
+            
+        if zeta == 0: return self.rho
         df = self.rho * (1 - (self.sigma * np.sign(zeta) * np.sign(unldot) + (1 - self.sigma)) * np.abs(zeta)**self.n)
+        
+        return df
+    
+    def dfnldunl_fun(self, unl, fnl, unldot):
+        def warning_handler(message, category, filename, lineno, file=None, line=None):
+            print(f"RuntimeWarning captured: {message}")
+            print(f"Problematic values in fnl: {fnl}")
+            print(f"Problematic exponent: {self.n}")
+            raise RuntimeError("Overflow encountered in np.power")
+
+        # Temporarily catch warnings during this computation
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", RuntimeWarning)
+            try:
+                # Compute the power operation
+                df = self.A - (self.beta *np.sign(fnl)*np.sign(unldot) - self.gamma)*np.abs(fnl)**self.n
+            except RuntimeWarning as e:
+                warning_handler(str(e), RuntimeWarning, __file__, None)
+        
         return df
 
     def instant_force(self, unl, unldot, update_prev=False):
@@ -115,19 +156,26 @@ class BoucWenForce(HystereticForce):
         unl_0 = self.up
         f0 = self.fp
         
+        # ode_fun = lambda unl, fnl: self.dfnldunl_fun(unl, fnl, unldot)
+        # solution = solve_ivp(ode_fun, [unl_0, unl], [f0], dense_output = True)
+        # fnl = solution.y[0][-1]
+        
         # Define the ODE as a lambda to fix the argument issue
-        ode_fun = lambda unl, zeta: self.dzetadunl_fun(unl, zeta, unldot)
+        ode_zeta_fun = lambda unl, zeta: self.dzetadunl_fun(unl, zeta, unldot)
         
         # Solve the ODE from unl_0 to unl with initial condition f0
-        solution_zeta = solve_ivp(ode_fun, [unl_0, unl], [f0/self.z0], dense_output=True)
-        
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(5)
+
+        solution_zeta = solve_ivp(ode_zeta_fun, [unl_0, unl], [f0/self.z0], dense_output=True)
+        signal.alarm(0)
         # Extract the final value of f at unl
         zeta = solution_zeta.y[0][-1]
-        
         fnl = zeta * self.z0
+
         
         # Compute dfnldunl at the final value of unl
-        dfnldunl = self.dzetadunl_fun(unl, fnl, unldot)*self.z0
+        dfnldunl = self.dfnldunl_fun(unl, fnl, unldot)
         
         # Update previous state if necessary
         if update_prev:
@@ -136,18 +184,36 @@ class BoucWenForce(HystereticForce):
         
         return fnl, dfnldunl
     
-    def instant_force_harmonic(self, unl, unldot, h, cst, update_prev = False):
+    def instant_force_harmonic(self, unl, unldot, h, cst, update_prev=False):
+        """
+        Evaluates the force at instantaneous displacement and velocity
+        with harmonic derivatives for the Bouc-Wen model.
+        """
+        # Number of harmonics
+        Nhc = len(cst)
+    
+        # Placeholder for harmonic derivatives
+        dfduh = np.zeros((1, 1, Nhc))
+        dfdudh = np.zeros((1, 1, Nhc))
         
-        #Number of nonlinear DOFs
-        Ndnl = unl.shape[0]
-        Nhc = hutils.Nhc(h)
+        # Call the base instant_force function to get force and derivative
+        fnl, dfnldunl = self.instant_force(unl, unldot, update_prev=update_prev)
         
-        dfduh = np.zeros((Ndnl, Ndnl, Nhc))
-        dfdudh = np.zeros((Ndnl, Ndnl, Nhc))
-        
-        fnl, dfnldunl = self.instant_force(unl, unldot, update_prev = update_prev)
-        
-        return fnl, dfnldunl, np.zeros_like(dfnldunl)
+        # Reshape fnl for output compatibility
+        fnl = np.atleast_1d(fnl)
+    
+        # Derivative wrt displacement harmonics
+        # Assumes a linear combination of cst and dfnldunl
+        dfduh = np.einsum('i,j->ij', dfnldunl, cst).reshape((1, 1, Nhc))
+    
+        # Derivative wrt velocity harmonics (assumes zero; modify as needed)
+        dfdudh = np.zeros_like(dfduh)
+    
+        # Store results for continuity between calls
+        self.dupduh = cst
+        self.dfpduh = dfduh
+    
+        return fnl, dfduh, dfdudh
         
     
 

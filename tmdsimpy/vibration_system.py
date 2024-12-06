@@ -781,6 +781,7 @@ class VibrationSystem:
         
         # Alternating Frequency Time Call
         
+        
         AFT_res = self.total_aft(Ascale*Uwxa[:-3], w, h, Nt=Nt, 
                                              aft_tol=aft_tol,
                                              calc_grad=calc_grad)

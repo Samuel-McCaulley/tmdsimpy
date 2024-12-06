@@ -54,28 +54,17 @@ line2 = 85
 U = np.atleast_2d(Uwxa_nl_full[[line1, line2], dof:-3:Nnl]).T*(10**Uwxa_nl_full[[line1, line2], -1])
 lams = Uwxa_full[[line1, line2], -3]
 
-fitness_config = {
-    'Nt'    : 1<<12,
-    'h'     : h,
-    'X0'    : U0,
-    'lam'   : lam,
-    'weights': weights,
-    'verbose': True,
-    'testloop': 6,
-    'doftitle': line
-    }
-
-
 
 plural_fitness_config = {
-    'Nt'    : 1<<6,
+    'Nt'    : 1<<12,
     'h'     : h,
     'X0_plural'    : U,
     'lam'   : lams,
     'weights': weights,
     'verbose': True,
     'testloop': 6,
-    'doftitles': [line1, line2]
+    'doftitles': [line1, line2],
+    'regularization': 'lasso'
     }
 
 bouc_lpsci = [1, 1, 1, 0]
@@ -85,39 +74,21 @@ hysteretic_fitness = lambda ga_instance, theta, idx: hysteretic_loop_plural_fitn
                                                            [0, 0, 0, 0], 'bouc-wen', 
                                                            theta, bouc_lpsci, plural_fitness_config, print_fitness = True)
 
-# hysteretic_fitness_total = lambda ga_instance, theta, idx: hysteretic_loop_plural_fitness(1<<11, 
-#                                                                 h, U0_plural, lam, 'iwan', 
-#                                                                 iwan_parameters[:-1], [0, 0, 0, 0], 
-#                                                                 'bouc-wen', theta, [1, 1, 1, 0], False, True)
-
-
-
-good_solution = [9.28655569, 5.66776462, 0.05721373, 1.59373539]
-good_solution = [9.52789669, 4.85045283, 5.70009417, 1.86747747]
-good_solution = [9.66307232, 7.99999021, 8.71325276, 0.40387107]
-good_solution = [9.64519515, 6.51131523, 7.5396514,  1.02588743]
 good_solution = [9.64105747, 7.2339903,  8.10953879, 0.71738319]
-good_solution_pure = nlutils.paramexp(good_solution, bouc_lpsci)
-good_solution_pure[0] /= patch_area
-good_solution_invariant_log = nlutils.paramlog(good_solution_pure, bouc_lpsci)
 
-print(f"Good solution to pass: {good_solution_invariant_log}")
-
+#Plot good solution
 hysteretic_fitness(None, good_solution, None)
 
 
-
-
-
 #%% PyGaD
+# To the professor: this script takes a very long time to run. 
 
 
-#8, 3, 2, 2 is an okay solution
 ga_instance = pygad.GA(
-    num_generations=10,              # Number of generations
+    num_generations=100,              # Number of generations
     num_parents_mating=4,            # Number of parents for mating
     fitness_func=hysteretic_fitness,       # Fitness function
-    sol_per_pop=10,                  # Number of solutions in the population
+    sol_per_pop=100,                  # Number of solutions in the population
     num_genes=4,             # Number of genes (4 in this case)
     gene_space=[{'low': 8, 'high': 10},
                 {'low': 0, 'high': 10},
