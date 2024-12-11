@@ -46,15 +46,13 @@ def hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, t
     except:
         testloop = 1
         
-    if verbose:
-        print(f"Testing {test_lparameters}")
     ref_parameters = nlutils.paramexp(ref_lparameters, ref_lpsci)
     test_parameters = nlutils.paramexp(test_lparameters, test_lpsci)
     
     try:
     
         signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(10)
+        signal.alarm(5)
         
         ref_time, ref_displacement, ref_forces = nlutils.hysteresis_loop(Nt, h, X0, lam, ref_model, ref_parameters, loops = refloop)
         test_time, test_displacement, test_forces = nlutils.hysteresis_loop(Nt, h, X0, lam, test_model, test_parameters, loops = testloop)
@@ -71,8 +69,6 @@ def hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, t
             plt.plot(test_displacement[-Nt:], test_force_loop)
             plt.show()
             plt.legend(("Reference Loop", "Test Loop"))
-            
-            print(f"Weighted norm of error: {weighted_norm}")
         
         signal.alarm(0)
         
@@ -133,6 +129,9 @@ def hysteretic_loop_plural_fitness(ref_model, ref_lparameters, ref_lpsci, test_m
         regularization = config['regularization']
     except:
         regularization = None
+        
+    if verbose:
+        print(f"Testing {test_lparameters}")
     
     ref_parameters = nlutils.paramexp(ref_lparameters, ref_lpsci)
     test_parameters = nlutils.paramexp(test_lparameters, test_lpsci)

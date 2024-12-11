@@ -22,6 +22,18 @@ from .nonlinear_force import HystereticForce
 from ..utils import harmonic as hutils
 
 
+import signal #handle timeout errors
+
+# Define a custom timeout exception
+class TimeoutException(Exception):
+    pass
+
+# Define the timeout handler
+def timeout_handler(signum, frame):
+    raise TimeoutException
+
+
+
 class BoucWenForceNew(HystereticForce):
     
     
