@@ -48,7 +48,7 @@ weights = np.ones_like(ref_disp)
 
 # weights[(ref_disp == min_disp) | (ref_disp == max_disp)] = 150
 
-lines = [2, 60, 85]
+lines = [2,5, 60, 85]
 
 U = np.atleast_2d(Uwxa_nl_full[lines, dof:-3:Nnl]).T*(10**Uwxa_nl_full[lines, -1])
 lams = Uwxa_full[lines, -3]
@@ -96,6 +96,7 @@ good_solution = [9.52789669, 4.85045283, 5.70009417, 1.86747747]
 good_solution = [9.66307232, 7.99999021, 8.71325276, 0.40387107]
 good_solution = [9.64519515, 6.51131523, 7.5396514,  1.02588743]
 good_solution = [9.64105747, 7.2339903,  8.10953879, 0.71738319]
+good_solution = [9.56939107, 6.82756906, 7.52200737, 0.95104092]
 good_solution_pure = nlutils.paramexp(good_solution, bouc_lpsci)
 good_solution_pure[0] /= patch_area
 good_solution_invariant_log = nlutils.paramlog(good_solution_pure, bouc_lpsci)
@@ -111,16 +112,16 @@ hysteretic_fitness(None, good_solution, None)
 #%% PyGaD
 
 def on_generation(ga_instance):
-    print(f"Generation: {ga_instance.generations_completed}")
+    print(f"########### Generation: {ga_instance.generations_completed} ######################")
 
 #8, 3, 2, 2 is an okay solution
 ga_instance = pygad.GA(
-    num_generations=75,              # Number of generations
+    num_generations=15,              # Number of generations
     num_parents_mating=6,            # Number of parents for mating
     fitness_func=hysteretic_fitness,       # Fitness function
     sol_per_pop=250,                  # Number of solutions in the population
     num_genes=4,             # Number of genes (4 in this case)
-    gene_space=[{'low': 8, 'high': 10},
+    gene_space=[{'low': 8, 'high': 11},
                 {'low': 0, 'high': 10},
                 {'low': 0, 'high': 10},
                 {'low': 0, 'high': 2}], # Range for each gene

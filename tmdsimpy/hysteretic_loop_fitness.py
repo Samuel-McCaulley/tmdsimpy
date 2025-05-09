@@ -34,7 +34,7 @@ def hysteretic_loop_fitness(ref_model, ref_lparameters, ref_lpsci, test_model, t
     except:
         verbose = False
         
-    refloops = None
+    refloop = None
     try:
         refloop = config['refloop']
     except:

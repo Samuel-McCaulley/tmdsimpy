@@ -707,7 +707,6 @@ class Continuation:
             succeed in continuing the same direction. 
 
         """
-        
         assert return_grad==False, 'Have not implemented this flag yet.'
         
         # Check about removing all output

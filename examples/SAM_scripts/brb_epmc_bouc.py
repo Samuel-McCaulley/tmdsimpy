@@ -45,7 +45,8 @@ vib_sys = VibrationSystem(M, K, ab=damp_ab)
 
 
 #lparams = [12.469255402222181, 8.33731378, 4.737470329999999, 0.30489182,16.888652840667923]
-lparams = [12.790433482222179, 6.51131523, 7.539651399999999, 1.02588743, 16.888652840667923]
+#lparams = [12.790433482222179, 6.51131523, 7.539651399999999, 1.02588743, 16.888652840667923]
+lparams = [12.714629351090801, 6.82756906, 7.522007369999999, 0.95104092, 16.888652840667923]
 
 lpsci = [1, 1, 1, 0, 1]
 
@@ -94,9 +95,11 @@ Aend = -4.7
 h_max = 3 # harmonics 0, 1, 2, 3
 Nt = 1<<7 # 2**7 = 128 AFT steps 
 
-ds = 0.08
-dsmax = 0.125*1.4
-dsmin = 0.02
+ds = 0.02
+dsmax = 0.01
+dsmin = 0.003
+
+FracLam = 0.99
 # Adjust weighting of amplitude v. other in continuation to hopefully 
 # reduce turning around. Higher puts more emphasis on continuation 
 # parameter (amplitudFracLam = 0.9

@@ -1,9 +1,10 @@
+
 import numpy as np
 from .nonlinear_force import HystereticForce
 
 # Harmonic Functions for AFT
 from ..utils import harmonic as hutils
-
+import sympy as sy
 
 class Iwan4Force(HystereticForce):
     """
@@ -237,6 +238,7 @@ class Iwan4Force(HystereticForce):
         
         return F, dFdX
         
+
     
     def instant_force(self, unl, unldot, update_prev=False):
         """
@@ -268,6 +270,8 @@ class Iwan4Force(HystereticForce):
         Implementation only allows for a single nonlinear element, thus
         shapes of first two outputs are reduced to scalar.
         """
+        def _is_jax_array(x):
+            return hasattr(x, '__module__') and 'jax' in x.__module__
         
         # Stuck Force
         fnlsliders = unl - self.up + self.fpsliders
@@ -275,9 +279,15 @@ class Iwan4Force(HystereticForce):
         # Mask of stuck sliders == places with unit derivative
         dfnlsliders_dunl = np.less_equal(np.abs(fnlsliders), self.phisliders)
         
-        fnlsliders[np.logical_not(dfnlsliders_dunl)] \
-                            = self.phisliders[np.logical_not(dfnlsliders_dunl)]\
-                                *np.sign(fnlsliders[np.logical_not(dfnlsliders_dunl)])
+        if _is_jax_array(fnlsliders):
+            import jax.numpy as jnp
+            idxs = jnp.logical_not(dfnlsliders_dunl)
+            fnlsliders = fnlsliders.at[idxs].set(
+                self.phisliders[idxs] * jnp.sign(fnlsliders[idxs])
+            )
+        else:
+            idxs = np.logical_not(dfnlsliders_dunl)
+            fnlsliders[idxs] = self.phisliders[idxs] * np.sign(fnlsliders[idxs])
 
         # # Additional derivative information does not need to be output:
         # dfnlsliders_dup = -dfnlsliders_dunl

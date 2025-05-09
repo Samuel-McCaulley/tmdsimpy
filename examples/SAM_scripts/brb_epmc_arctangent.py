@@ -8,7 +8,8 @@ from tmdsimpy.vibration_system import VibrationSystem
 from tmdsimpy.nlforces.vector_iwan4 import VectorIwan4
 from tmdsimpy.nlforces.general_poly_stiffness import GenPolyForce
 from tmdsimpy.solvers import NonlinearSolver
-import tmdsimpy.nlutils as hutils_sam
+import tmdsimpy.nlutils as nlutils
+from tmdsimpy.nlforces.arctangent_stiffness import ArctangentStiffness
 
 import tmdsimpy.utils.harmonic as hutils
 from tmdsimpy.continuation import Continuation
@@ -41,16 +42,51 @@ damp_ab = [0.087e-2*2*(168.622*2*np.pi), 0.0]
 
 vib_sys = VibrationSystem(M, K, ab=damp_ab)
 
-#lparams =[5.5, 13.8, -0.95, -2, 12.35] #Plot on MATLAB
-#lparams = [4.957259556938594, 11.737845846995377, -0.023785113541144, -2.953624228947613, 16.933461451698992] #best damping
-lparams = [5.530289365884571, 15.859238733093676, -0.999870602783605, -5.746331062210725, 16.888652840667923] #Best Freq
-lpsci = [1, 1, 0, 1, 1]
+'''
+Find Arctangent Stiffness Parameters
+'''
+lparams = [4.957259556938594, 11.737845846995377, -0.023785113541144, -2.953624228947613, 16.933461451698992]
+#lparams = [5.530289365884571, 15.859238733093676, -0.999870602783605, -5.746331062210725, 16.888652840667923] #Best Freq
 
+lpsci = [1, 1, 0, 1, 1]
 iwan_parameters = [10 ** lparams[i] if lpsci[i] == 1 else lparams[i] for i in range(len(lparams))]
 
 
 
+kt = iwan_parameters[1] #Test to see if lower kt makes it work
+Fs = iwan_parameters[0]  # N, Match Jenkins
+chi = iwan_parameters[2]  # Have a more full hysteresis loop than chi=0.0
+beta = iwan_parameters[3]  # Smooth Transition
+
+
+Uwxa_full_iwan = np.load('./data/Uwxa_full_iwan.npy')
+beginning_amplitude = 10**Uwxa_full_iwan[0, -1]
+phi_max = Fs*(1 + beta)/(kt * (beta + (chi + 1)/(chi + 2)))
+Kt_true = kt*(1 - (beginning_amplitude/phi_max)**(1 + chi)/(chi + 2)/(beta + 1))
+
+
+'''
+Edit, the s parameter is now calcaultated for each nonlinear degree of freedom
+'''
+#wf, b, s = ArctangentStiffness.incomplete_slip_parameters(np.log10(X0norm), Uwxa_full_iwan[:, -3], Uwxa_full_iwan[:, -2], True, True)
+
+
+# for nldof in range(Nnl):
+#     Unorm = np.zeros(Uwxa_full_iwan.shape[0])
+#     for line in range(Uwxa_full_iwan.shape[0]):
+#         X = (Uwxa_full_iwan[line, :-3]*10**Uwxa_full_iwan[line, -1]).reshape(2*3 + 1, -1)
+#         U = X @ Q.T
+#         Unorm[line] = np.linalg.norm(U[:, nldof])
+#     plt.plot(np.log10(Unorm), Uwxa_full_iwan[:, -3])
+#     plt.title(f"Unorm {nldof} vs A")
+#     plt.show()
+
+
+#%%
 patch_areas = [0.000385483218541205, 0.000715750926938309, 0.000715750512690334, 0.000715750596958764, 0.000385483218541205] #Iwan parameters
+lparams = [5.530289365884571, 15.859238733093676, -0.999870602783605, -5.746331062210725, 16.888652840667923] #Best Freq
+lpsci = [1, 1, 0, 1, 1]
+iwan_parameters = [10 ** lparams[i] if lpsci[i] == 1 else lparams[i] for i in range(len(lparams))]
 
 X0 = np.squeeze(system_matrices['X0'])
 
@@ -58,43 +94,74 @@ u0 = Q @ X0
 
 uxyn_0 = np.column_stack((Q[0::3][:] @ X0, Q[1::3][:] @ X0, Q[2::3][:] @ X0))
 
+# Normal - settings for higher accuracy as used in previous papers
+h_max = 3 # harmonics 0, 1, 2, 3
+h = np.array(range(h_max + 1))
+Nt = 1<<7 # 2**7 = 128 AFT steps 
+
+
 for i in range(Nnl):
+    
     Ls = Q[i:i+1, :]
     Lf = T[:, i:i+1]
     
-    Fs = iwan_parameters[0] * patch_areas[i // 3]
-    Kt = iwan_parameters[1] * patch_areas[i // 3]
-    Chi = iwan_parameters[2]
-    Bt = iwan_parameters[3]
+    Kt = Kt_true * patch_areas[i // 3]
     Kn = iwan_parameters[4] * patch_areas[i // 3]
     
     tmp_nl_force = None
     if i % 3 == 0 or i % 3 == 1: #x or y 
-        tmp_nl_force = VectorIwan4(Ls, Lf, Kt,
-                                   Fs,
-                                   Chi,
-                                   Bt)
+        #Calculate Unorm for degree of freedom
+        Unorm = np.zeros(Uwxa_full_iwan.shape[0])
+        for line in range(Uwxa_full_iwan.shape[0]):
+            X = (Uwxa_full_iwan[line, :-3]*10**Uwxa_full_iwan[line, -1]).reshape(2*h_max + 1, -1)
+            U = X @ Q.T
+            Unorm[line] = np.linalg.norm(U[:, i])
+            
+        b, s = ArctangentStiffness.incomplete_slip_parameters(np.log10(Unorm), Uwxa_full_iwan[:, -3], Uwxa_full_iwan[:, -2], returnwf=False)
+        print(s)
+        tmp_nl_force = ArctangentStiffness(Ls, Lf, Kt, b, s)
+        
+        U_initial_full = ((Uwxa_full_iwan[0, :-3]*10**Uwxa_full_iwan[0, -1]).reshape(2*h_max + 1, -1)) @ Q.T
+        U_initial = U_initial_full[:, i]
+        
+        
+        # Create figure with two subplots side-by-side
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Generate and plot Iwan model hysteresis
+        t, disp, iwan_force = nlutils.hysteresis_loop(1 << 10, h, np.atleast_2d(U_initial).T, 
+                              Uwxa_full_iwan[0, -3], 'iwan', 
+                              [Kt, Fs, iwan_parameters[2], iwan_parameters[3]])
+        ax1.plot(disp, iwan_force)
+        ax1.set_title("Hysteresis loop Iwan")
+        
+        # Generate and plot Arctangent model hysteresis
+        t, disp, arc_force = nlutils.hysteresis_loop(1 << 10, h, np.atleast_2d(U_initial).T,
+                               Uwxa_full_iwan[0, -3], 'arctangent', 
+                               np.array([Kt, b, s]))
+        ax2.plot(disp, arc_force)
+        ax2.set_title("Hysteresis loop Arctangent")
+        
+        # Adjust spacing and display
+        plt.tight_layout()
+        plt.show()
     else:
-        print("here")
         tmp_nl_force = GenPolyForce(Ls, Lf, np.array([[Kn]]), np.array([[1]])) #Linear penalty stiffness for the normal dimension
     
     vib_sys.add_nl_force(tmp_nl_force)
 
 
-Astart = -10
+Astart = -9
 Aend = -4.4
 
-# Normal - settings for higher accuracy as used in previous papers
-h_max = 3 # harmonics 0, 1, 2, 3
-Nt = 1<<7 # 2**7 = 128 AFT steps 
 
-ds = 0.02
-dsmax = 0.125
-dsmin = 0.005
+ds = 0.008
+dsmax = 0.0125*1.4
+dsmin = 0.002
 # Adjust weighting of amplitude v. other in continuation to hopefully 
 # reduce turning around. Higher puts more emphasis on continuation 
 # parameter (amplitude)
-FracLam = 0.75 
+FracLam = 1.0
 ###############################################################################
 ####### 3. Prestress Analysis                                           #######
 ###############################################################################
@@ -223,6 +290,13 @@ Uwxa0[-2] = 2*Uwxa0[-3]*zeta
 
 Uwxa0[-1] = Astart
 
+'''
+For some reason why, the continuation guess method here is very bad. For now, 
+the guess is the first step from Iwan
+'''
+
+#Uwxa0 = Uwxa_full_iwan[0, :]
+
 ###############################################################################
 ####### 15. EPMC Continuation                                           #######
 ###############################################################################
@@ -231,7 +305,7 @@ Uwxa0[-1] = Astart
 
 epmc_fun = lambda Uwxa, calc_grad=True : vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt, 
                                                           calc_grad=calc_grad)
-epmc_config={'max_steps' : 12, # balance with reform_freq
+epmc_config={'max_steps' : 5000, # balance with reform_freq
             'reform_freq' : 2, #>1 corresponds to BFGS 
             'verbose' : True, 
             'xtol'    : None, # Just use the one passed from continuation
@@ -249,11 +323,11 @@ epmc_solver = NonlinearSolver()
 
 continue_config = {'DynamicCtoP': True, 
                    'TargetNfev' : 4,
-                   'MaxSteps'   : 250, # May need more depending on ds and dsmin
+                   'MaxSteps'   : 5000, # May need more depending on ds and dsmin
                    'dsmin'      : dsmin,
                    'dsmax'      : dsmax,
                    'verbose'    : 1,
-                   'xtol'       : 1e-5*np.sqrt(Uwxa0.shape[0]), 
+                   'xtol'       : 1e-4*np.sqrt(Uwxa0.shape[0]), 
                    'corrector'  : 'Ortho', # Ortho, Pseudo
                    'nsolve_verbose' : True,
                    'FracLam' : FracLam,
@@ -300,33 +374,7 @@ amps = Uwxa_full[:, -1]
 plt.plot(amps, freqs)
 plt.xlabel("Log Modal Amplitude")
 plt.ylabel("Natural Frequency")
-plt.title("Iwan: " + np.array2string(np.round(lparams, 5)))
+plt.title("Arctan Stiffness: " + np.array2string(np.round(lparams, 5)))
 plt.show()
 
-np.save('data/Uwxa_full_iwan.npy', Uwxa_full)
-
-## Plot a hysteresis loop
-
-
-dof = 9
-line = 50
-X0 = np.atleast_2d(Uwxa_full[line, dof:-3:Ndof]).T*(10**Uwxa_full[line, -1])
-
-print(X0)
-
-Fs = iwan_parameters[0] * patch_areas[dof // 3]
-Kt = iwan_parameters[1] * patch_areas[dof // 3]
-Chi = iwan_parameters[2]
-Bt = iwan_parameters[3]
-Kn = iwan_parameters[4] * patch_areas[dof // 3]
-
-
-time, displacement, forces = hutils_sam.hysteresis_loop(1<<13, h, X0, Uwxa_full[line, -3], 'iwan', [Kt, Fs, Chi, Bt])
-
-plt.plot(displacement, forces)
-plt.show()
-plt.plot(time, displacement)
-
-Uwxa_nl_full = hutils_sam.transform_to_nonlinear(Uwxa_full, Q, Ndof, Nnl)
-#%%
-np.savez('data/iwan_epmc.npz', Uwxa_full = Uwxa_full, Uwxa_nl_full = Uwxa_nl_full, h = h, Ndof = Ndof, iwan_parameters = iwan_parameters, patch_area = patch_areas[dof // 3], patch_areas = patch_areas, Q = Q)
+np.save('data/Uwxa_full_arctanstiffness.npy', Uwxa_full)
