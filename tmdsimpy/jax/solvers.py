@@ -592,6 +592,9 @@ class NonlinearSolverOMP(NonlinearSolver):
                 sol['nfev'] += 1
                 sol['njev'] += 1
                 
+                ##TESTING LOOP
+                if i >= 40:
+                    breakpoint()
                 if np.isnan(np.sum(R)):
                     if verbose: print('Stopping with NaN Residual')
                     no_nan_vals = False

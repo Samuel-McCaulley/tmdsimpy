@@ -743,7 +743,7 @@ class Continuation:
 
         fun0_cond = self.solver.conditioning_wrapper(fun0, self.CtoP[:-1], 
                                                      RPtoC=self.RPtoC[:-1])
-        
+
         Xc, R, dRdX, sol = self.solver.nsolve(fun0_cond, 
                                              XlamP0[:-1]/self.CtoP[:-1],
                                              xtol=self.config['xtol'], \
@@ -788,6 +788,9 @@ class Continuation:
             and direct*XlamP_full[step-1,-1] > direct*(lam0-direct*self.config['backtrackStop']): 
             #{ Continuation step loop
             
+           ## if step >= 20:
+           #     breakpoint()
+            
             # Update Conditioning Dynamically
             if self.config['DynamicCtoP']:
                 self.CtoP = np.maximum(np.abs(XlamP_full[step-1]), self.CtoP0)
@@ -805,7 +808,6 @@ class Continuation:
                 correct_fun = lambda XlamC, calc_grad=True : \
                         self.correct_res(fun, XlamC, XlamP0/self.CtoP, 
                                          ds, dirC, calc_grad=calc_grad)
-                
                 XlamC, R, dRdX, sol = self.solver.nsolve(correct_fun, \
                                         XlamP0/self.CtoP + dirC*ds,\
                                         xtol=self.config['xtol'],\

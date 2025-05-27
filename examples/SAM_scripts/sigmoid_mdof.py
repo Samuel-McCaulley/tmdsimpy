@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
 from tmdsimpy.nlforces.sigmoid_stiffness import SigmoidStiffness
-from tmdsimpy.nlforces.iwan4_element import *
+from tmdsimpy.nlforces.vector_iwan4 import *
 from tmdsimpy.utils.harmonic import *
 import matplotlib.pyplot as plt
 from tmdsimpy.continuation import Continuation
@@ -19,13 +19,13 @@ from sdof_iwan_epmc import sdof_uwxa_full
 import tmdsimpy.nlutils as nlutils
 from scipy import io as sio
 import time
-
+#%% Iwan Modeling
 
 M = np.diag([1])
 C = M*0.005
 c = 0.005
-K = 10000*np.array([
-    [3]
+K = 100*np.array([
+    [5]
 ])
 
 
@@ -39,7 +39,7 @@ Fs = 0.2*1000  # N, Match Jenkins
 chi = -0.5  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
-iwan_force = Iwan4Force(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
+iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
 
 #iwan_force1 = Iwan4Force(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
 
@@ -56,9 +56,9 @@ Nt = 1 << 7  # 2**7 = 128 AFT steps
 h = np.array(range(h_max+1))
 Nhc = hutils.Nhc(h)
 mode_ind = 0
-ds = 0.0008
-dsmax = 0.015
-dsmin = 0.0002
+ds = 0.008
+dsmax = 0.15
+dsmin = 0.002
 # Adjust weighting of amplitude v. other in continuation to hopefully
 # reduce turning around. Higher puts more emphasis on continuation
 # parameter (amplitude)
@@ -133,7 +133,7 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
 
 
 epmc_config = {'max_steps': 300,  # balance with reform_freq
-               'reform_freq': 2,  # >1 corresponds to BFGS
+               'reform_freq': 1,  # >1 corresponds to BFGS
                'verbose': True,
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
@@ -155,7 +155,7 @@ continue_config = {'DynamicCtoP': True,
                    'dsmin': dsmin,
                    'dsmax': dsmax,
                    'verbose': 1,
-                   'xtol': 4e-3*np.sqrt(Uwxa0.shape[0]),
+                   'xtol': 1e-6*np.sqrt(Uwxa0.shape[0]),
                    'corrector': 'Ortho',  # Ortho, Pseudo
                    'nsolve_verbose': False,
                    'FracLam': FracLam,
@@ -201,7 +201,7 @@ plt.show()
 
 plt.plot(Uwxa_full_iwan[:, -1], Uwxa_full_iwan[:, -2])
 plt.show()
-
+breakpoint()
 #%% Sigmoid Stiffness Testing
 
 harmonic_norm_iwan = nlutils.nonlinear_harmonic_norm(Uwxa_full_iwan, Q) 
@@ -213,6 +213,7 @@ alphas = Uwxa_full_iwan[:, -2]
 b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
 #b1, s1 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 1], frequencies, alphas, verbose = True)
 
+#s0 += 5 #make it hella linear in beginning
 sig0 = SigmoidStiffness(Q[[0], :], T[:, [0]], kt, b0, s0)
 #sig1 = SigmoidStiffness(Q[[1], :], T[:, [1]], kt, b1, s1)
 
@@ -257,8 +258,8 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
                                                             calc_grad=calc_grad)
 
 
-epmc_config = {'max_steps': 1000,  # balance with reform_freq
-               'reform_freq': 1,  # >1 corresponds to BFGS
+epmc_config = {'max_steps': 300,  # balance with reform_freq
+               'reform_freq': 2,  # >1 corresponds to BFGS
                'verbose': True,
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
@@ -276,7 +277,7 @@ epmc_solver = NonlinearSolverOMP(config=epmc_config)
 
 continue_config = {'DynamicCtoP': True,
                    'TargetNfev': 4,
-                   'MaxSteps': 10,  # May need more depending on ds and dsmin
+                   'MaxSteps': 5000,  # May need more depending on ds and dsmin
                    'dsmin': dsmin,
                    'dsmax': dsmax,
                    'verbose': 1,

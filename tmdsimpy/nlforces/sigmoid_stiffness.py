@@ -273,8 +273,8 @@ class SigmoidStiffness(HystereticForce):
         f0 = self.fp
         dunl = np.abs(unl - unl0) * (1 + initial_loading)
         
-        ks = self.secant_stiffness(dunl) / (1 + initial_loading)
-        dks_ddunl = self.secant_stiffness_derivative(dunl) / (1 + initial_loading)
+        ks = self.secant_stiffness(dunl) #/ (1 + initial_loading)
+        dks_ddunl = self.secant_stiffness_derivative(dunl) #/ (1 + initial_loading)
         
         if unldot == 0:
             sign_unldot = np.sign(unl - unl0)
@@ -282,17 +282,23 @@ class SigmoidStiffness(HystereticForce):
             sign_unldot = np.sign(unldot)
         
         # Compute dfnldunl correctly
-        ddunl_dunl = (1 + initial_loading) * np.sign(unl - unl0)
-        dfnldunl = sign_unldot * (ks + dunl * dks_ddunl) * ddunl_dunl
+        ddunl_dunl = (1 + initial_loading) #* np.sign(unl - unl0), I'm pretty sure this is a mistake
+        #dfnldunl = sign_unldot * (ks + dunl * dks_ddunl) * ddunl_dunl
+        dfnldunl = (ks + dunl * dks_ddunl) * ddunl_dunl
         
-        fnl = sign_unldot * dunl * ks + f0
+        
+        # ChatGPT said this is better 
+        #fnl = sign_unldot * dunl * ks + f0
+        fnl = (unl - self.up) * ks + f0
+        fnl /= (1 + initial_loading)
+        # fnl = sign_unldot * (unl - self.up) * ks + f0
         
         if update_prev:
             self.up = unl
             self.fp = fnl
-        
+        #Derivative information (i'm pretty sure) is ignored but this will prob be wrong
         return fnl, dfnldunl
-    
+
     def instant_force_harmonic(self, unl, unldot, h, cst, update_prev=False, initial_loading = False):
         """
         Evaluates the force at instantaneous displacement and velocity
@@ -313,17 +319,231 @@ class SigmoidStiffness(HystereticForce):
     
         # Derivative wrt displacement harmonics
         # Assumes a linear combination of cst and dfnldunl
-        dfduh = np.einsum('i,j->ij', dfnldunl, cst).reshape((1, 1, Nhc))
-    
+        # dfduh = np.einsum('i,j->ij', dfnldunl, cst-self.dupduh).reshape((1, 1, Nhc))
+        dfduh = np.einsum('i, j->ij', dfnldunl, cst).reshape((1, 1, Nhc))
+        
         # Derivative wrt velocity harmonics (assumes zero; modify as needed)
         dfdudh = np.zeros_like(dfduh)
     
         # Store results for continuity between calls
-        self.dupduh = cst
-        self.dfpduh = dfduh
+        if update_prev:
+            self.dupduh = cst
+            self.dfpduh = dfduh
     
         return fnl, dfduh, dfdudh
+        
+    def local_force_history_crit(self, unlt, unltdot, h, cst, unlth0, \
+                                 max_repeats=2, atol=1e-10, rtol=1e-10):
+        """
+        Modified `local_force_history` to pass out slider states as well
+        as other returns.
+
+        Parameters
+        ----------
+        unlt : (Nt,Nnl) numpy.ndarray
+            Local displacements, rows are different time instants and
+            columns are different displacement DOFs.
+        unltdot : (Nt,Nnl) numpy.ndarray
+            Local velocities, rows are different time instants and
+            columns are different displacement DOFs.
+        h : 1D numpy.ndarray, sorted
+            List of harmonics used in subsequent analysis. Corresponds
+            to `Nhc` harmonic components.
+        cst : (Nt,Nhc) numpy.ndarray
+            Evaluation of each harmonic component (columns) at a given instant
+            in time (row = instant in time). These are without any harmonic
+            coefficients, so are just cosine and sine evaluations.
+        unlth0 : (Nnl,) numpy.ndarray
+            Zeroth harmonic contributions to a time series of displacements.
+            This is passed to `init_history_harmonic` to initialize model.
+        max_repeats : int, optional
+            Number of times to repeat the time series to converge the 
+            initial state with `local_force_history`. 
+            Two is sufficient for slider models. 
+            The default is 2.
+        atol : float, optional
+            Absolute tolerance on force time series convergence to steady-state
+            (final state of cycle).
+            The default is 1e-10.
+        rtol : float, optional
+            Relative tolerance on force time series convergence to steady-state
+            (final state of cycle).
+            The default is 1e-10.
+
+        Returns
+        -------
+        ft : (Nt,Nnl) numpy.ndarray
+            Local nonlinear forces. First index is time instants, second index
+            is which local nonlinear force DOF.
+        dfduh : (Nt,Nnl,Nnl,Nhc) numpy.ndarray
+            Derivative of forces with respect to displacement harmonic
+            coefficients.
+            First two indices correspond to `ft`. Third index corresponds to
+            which local nonlinear displacement. 
+            Fourth index corresponds to which of the `Nhc` harmonic 
+            components.
+        dfdudh : (Nt,Nnl,Nnl,Nhc) numpy.ndarray
+            Derivative of forces with respect to velocities harmonic
+            coefficients.
+            First two indices correspond to `ft`. Third index corresponds to
+            which local nonlinear displacement. 
+            Fourth index corresponds to which of the `Nhc` harmonic 
+            components.
+        fsliders : (Nt, Nsliders+1) numpy.ndarray
+            For each instant in time (row), the columns are the force of each
+            slider in integrating the Iwan nonlinearity force.
+        dfslidersduh : (Nt, Nsliders+1, Nhc) numpy.ndarray
+            The derivative of `fsliders` with respect to the harmonic
+            coefficients of the displacement `unlt`.
+
+        Notes
+        -----
+
+        Function is intended to be called for only a subset of the full times
+        of a cycle. These times should just be the velocity reversal points.
+        This allows to the calculation of those points more directly
+        to improve the efficiency of `local_force_history`.
+
+        Shapes of outputs rely on having `Nnl == 1`.
+
+        """
+        its = 0
+        
+        rcheck = 0
+        acheck = 0
+        
+        # Initialize Memory - Assumption on shape is reasonable for mechanical 
+        # systems, but may not be perfect.
+        Nt,Ndnl = unlt.shape
+        Nhc = hutils.Nhc(h)
+        
+        ft = np.zeros_like(unlt)
+        dfduh = np.zeros((Nt, Ndnl, Ndnl, Nhc))
+        dfdudh = np.zeros((Nt, Ndnl, Ndnl, Nhc))
+        
+        
+        # Only initialize before the loop. History is propogated through 
+        # repeated loops over the period
+        self.init_history_harmonic(unlth0, h)
+        fp = self.fp
+        
+        while( (its == 0) or (acheck > atol and rcheck > rtol and its < max_repeats) ):
+            
+            # Time Loop                
+            for ti in range(Nt):
+                if its == 0 and ti == 0: #Very initial load from unlth0 to first critical point
+                    fttmp,dfdutmp,dfdudtmp = \
+                        self.instant_force_harmonic(unlt[ti, :], unltdot[ti, :], \
+                                                    h, cst[ti, :], update_prev=True, initial_loading = True)
+                else:
+                    # Update this to immediately save into array without tmps
+                    fttmp,dfdutmp,dfdudtmp = \
+                        self.instant_force_harmonic(unlt[ti, :], unltdot[ti, :], \
+                                                    h, cst[ti, :], update_prev=True)
+                
+                ft[ti,:] = fttmp
+                dfduh[ti,:,:,:] = dfdutmp
+                dfdudh[ti,:,:,:] = dfdudtmp
+
+
+                
+            its = its + 1
+            
+            acheck = np.abs(ft[ti, :] - fp)
+            rcheck = np.abs(acheck / (ft[ti, :]+np.finfo(float).eps) )
+            
+            fp = ft[ti, :]
+        
+        return ft, dfduh, dfdudh
+
+    def local_force_history(self, unlt, unltdot, h, cst, unlth0, max_repeats=2, 
+                            atol=1e-10, rtol=1e-10):
+        """
+        Evaluate local forces and derivatives for steady-state harmonic motion.
+        """
+        # Initialize outputs
+        Nt, Ndnl = unlt.shape
+        Nhc = hutils.Nhc(h)
+        ft = np.zeros_like(unlt)
+        dfduh = np.zeros((Nt, Ndnl, Ndnl, Nhc))
+        dfdudh = np.zeros((Nt, Ndnl, Ndnl, Nhc))
     
+        # Identify reversal points (velocity direction changes)
+        dup = unlt - np.roll(unlt, 1, axis=0)
+        dun = np.roll(unlt, -1, axis=0) - unlt
+        vector_set = np.equal(np.sign(dup), np.sign(dun))
+        vector_set[0] = False  # First point isn't a reversal
+    
+        # Extract reversal points and process them
+        crit_mask = np.logical_not(vector_set).flatten()
+        unlt_crit = unlt[crit_mask, :]
+        unltdot_crit = unltdot[crit_mask, :]
+        cst_crit = cst[crit_mask, :]
+    
+        # Process critical points (velocity reversals)
+        ft_crit, dfduh_crit, dfdudh_crit = self.local_force_history_crit(
+            unlt_crit, unltdot_crit, h, cst_crit, unlth0, 
+            max_repeats=max_repeats, atol=atol, rtol=rtol
+        )
+    
+        # Assign critical point results
+        ft[crit_mask] = ft_crit
+        dfduh[crit_mask] = dfduh_crit
+        dfdudh[crit_mask] = dfdudh_crit
+    
+        # Process segments between reversals
+        crit_inds = np.where(crit_mask)[0]
+        crit_inds = np.append(crit_inds, crit_inds[0])  # Wrap for periodic boundary
+    
+        for i in range(len(crit_inds) - 1):
+            start = crit_inds[i] + 1
+            stop = crit_inds[i + 1]
+            stop = stop + Nt if stop == 0 else stop
+            
+            if stop <= start:
+                continue
+            
+    
+            # Get previous state from critical point
+            up = unlt[start-1, :]
+            f0 = ft[start-1, :]
+            
+            self.up = up
+            self.fp = f0;
+    
+            # Current segment data
+            segment_displacements = unlt[start:stop, :]
+            segment_cst = cst[start:stop, :]
+    
+            # Signed displacement difference (preserve directionality)
+            delta_unl = (segment_displacements - up)
+            dunl = np.abs(delta_unl) + 1e-15  # Prevent log(0) in stiffness calc
+    
+            # Stiffness calculations
+            ks = self.secant_stiffness(dunl)
+            dks_ddunl = self.secant_stiffness_derivative(dunl)
+    
+            # Force calculation
+            ft[start:stop] = delta_unl * ks + f0
+    
+            # Key Fix: Use raw harmonic basis (cst) without reversal subtraction
+            dfnldunl = ks + delta_unl * dks_ddunl
+            dfduh_segment = dfnldunl.reshape(-1, 1, 1, 1) * segment_cst.reshape(-1, 1, 1, Nhc)
+            
+            dfduh[start:stop] = dfduh_segment
+    
+        # Set the DC harmonic to zero because idk 
+        #dfduh[:, :, :, 0] = np.zeros((Nt, Ndnl, Ndnl))
+        #dfduh -= np.mean(dfduh, axis = 0)
+        
+        
+        # Reset harmonic information i think
+        self.init_history_harmonic(unlth0, h)
+        return ft, dfduh, dfdudh
+        
+
+
+    '''
 
 
     def local_force_history(self, unlt, unltdot, h, cst, unlth0, 
@@ -376,10 +596,6 @@ class SigmoidStiffness(HystereticForce):
         unltdot_repeats = np.tile(unltdot, (max_repeats, 1))
         cst_repeats = np.tile(cst, (max_repeats, 1))
         
-        # Initialize the model histories (both harmonic and general)
-        self.init_history_harmonic(unlth0, h)
-        self.init_history(up = unlt[0])
-        
         # Identify reversal points based on velocity sign changes.
         # A reversal occurs if (for a given DOF) the product of consecutive velocity
         # values is negative. Here we assume that if any DOF reverses, we update history.
@@ -388,7 +604,7 @@ class SigmoidStiffness(HystereticForce):
         # For simplicity, use the first DOF (or you can combine across DOFs as needed)
         #reversal[:-1] |= (unltdot_repeats[:-1, 0] * unltdot_repeats[1:, 0] < 0) #Identifies all of the reversal points.
         
-        
+        self.init_history_harmonic(unlth0, h)
         # Figure out when revesal occurs
         
         
@@ -414,8 +630,9 @@ class SigmoidStiffness(HystereticForce):
         
         # Process the reversal (critical) points sequentially.
         for idx in reversal_indices:
+            #5/22 tried something: update previous might be false to ensure symmetry across unlth0
             ftmp, dfdtmp, dfdutmp = self.instant_force_harmonic(
-                unlt_repeats[idx, :], unltdot_repeats[idx, :], h, cst_repeats[idx, :], update_prev=True
+                unlt_repeats[idx, :], unltdot_repeats[idx, :], h, cst_repeats[idx, :], update_prev=False
                 , initial_loading = idx == reversal_indices[1])
             ft_repeats[idx, :] = ftmp
             dfduh_repeats[idx, :, :, :] = dfdtmp
@@ -439,10 +656,10 @@ class SigmoidStiffness(HystereticForce):
             
             # Compute the displacement difference (using absolute difference)
             # Note: (ref_unl == 0) is used to avoid division by zero.
-            dunl_seg = np.abs(unlt_repeats[start:stop, :] - ref_unl) * (1 + (i == 0))
+            dunl_seg = np.abs(unlt_repeats[start:stop, :] - ref_unl) #* (1 + (i == 0))
             
             # Compute the secant stiffness for the segment.
-            ks_seg = self.secant_stiffness(dunl_seg) / (1 + (i == 0))
+            ks_seg = self.secant_stiffness(dunl_seg) #/ (1 + (i == 0))
             
             # Use the sign of the velocity to determine the force direction.
             sign_seg = np.sign(unltdot_repeats[start:stop, :])
@@ -455,7 +672,7 @@ class SigmoidStiffness(HystereticForce):
             ft_repeats[start:stop, :] = f_seg
             
             # Compute the derivative with respect to displacement.
-            dfnldunl_seg = ks_seg
+            dfnldunl_seg = ks_seg + dunl_seg * self.secant_stiffness_derivative(dunl_seg)      
             
             # For harmonic derivatives, mimic the instant_force_harmonic logic:
             # For each time step in the segment and for each DOF, we set
@@ -470,12 +687,14 @@ class SigmoidStiffness(HystereticForce):
             
             dfduh = dfduh_repeats[-Nt:, :, :, :]
             
-            # The 0th harmonic derivative should be zero.
-            dfduh[:, 0, 0 ,0] = 0
-            
+        # The 0th harmonic derivative should be zero, but this might affect convergence
+        #dfduh[:, 0, 0 ,0] = 0
+        #dfduh -= np.mean(dfduh, axis=0, keepdims=True)
+        
+
         return ft, dfduh, dfdudh
 
-
+'''
     
     
     
