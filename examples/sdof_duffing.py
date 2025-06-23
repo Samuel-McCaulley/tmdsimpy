@@ -19,9 +19,9 @@ import sys
 import numpy as np
 
 sys.path.append('..')
-# import tmdsimpy
 
 from tmdsimpy.nlforces.cubic_stiffness import CubicForce
+from tmdsimpy.nlforces.vector_iwan4 import VectorIwan4
 from tmdsimpy.vibration_system import VibrationSystem
 from tmdsimpy.solvers import NonlinearSolver
 from tmdsimpy.continuation import Continuation
@@ -41,7 +41,7 @@ knl = 1 # N/m^3 # Nonlinear Stiffness
 ab_damp = [c/m, 0]
 
 # Flag to produce shooting results and compare to HBM (or False=don't do it)
-run_shooting = True
+run_shooting = False
 
 ###############################################################################
 ####### Model Construction                                              #######
@@ -54,6 +54,8 @@ T = np.array([[1.0]])
 kalpha = np.array([knl])
 
 duff_force = CubicForce(Q, T, kalpha)
+
+duff_force = VectorIwan4(Q, T, knl, 10, 0, 0.5)
 
 # Setup Vibration System
 M = np.array([[m]])

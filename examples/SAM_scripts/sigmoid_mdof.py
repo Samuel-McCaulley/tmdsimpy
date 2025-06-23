@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
-from tmdsimpy.nlforces.sigmoid_stiffness import SigmoidStiffness
+from tmdsimpy.nlforces.sigmoid_integral import SigmoidIntegral
 from tmdsimpy.nlforces.vector_iwan4 import *
 from tmdsimpy.utils.harmonic import *
 import matplotlib.pyplot as plt
@@ -85,7 +85,7 @@ static_config={'max_steps' : 30,
                 }
 
 # Custom Newton-Raphson solver
-static_solver = NonlinearSolver() 
+#static_solver = NonlinearSolverOMP(config=static_config)
 
 
 Xpre, R, dRdX, sol = static_solver.nsolve(pre_fun, X0,
@@ -102,10 +102,9 @@ print('Symmetrix matrix has a maximum error/max value of: {}'.format(
 
 print('Using using  (Kpre + Kpre.T)/2 version for eigen analysis')
 
-Kpre = (dRpredX + dRpredX.T) / 2.0 #Gets a really off-kilter prestress for some reason
+Kpre_iwan = (dRpredX + dRpredX.T) / 2.0 #Gets a really off-kilter prestress for some reason
 
-eigvals, eigvecs = static_solver.eigs(Kpre, M) #Temporary
-
+eigvals, eigvecs = static_solver.eigs(Kpre_iwan, M) #Temporary
 Fl = np.zeros(Nhc*Ndof)
 Fl[:Ndof] = Fv
 Fl[2*Ndof] = 1 #Sine Forcing
@@ -210,11 +209,12 @@ log_hnorm_iwan = np.log10(harmonic_norm_iwan)
 frequencies = Uwxa_full_iwan[:, -3]
 alphas = Uwxa_full_iwan[:, -2]
 
-b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
+#b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
 #b1, s1 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 1], frequencies, alphas, verbose = True)
 
+b0, s0 = 10**6.4, 10**-6
 #s0 += 5 #make it hella linear in beginning
-sig0 = SigmoidStiffness(Q[[0], :], T[:, [0]], kt, b0, s0)
+sig0 = SigmoidIntegral(Q[[0], :], T[:, [0]], kt, b0, s0)
 #sig1 = SigmoidStiffness(Q[[1], :], T[:, [1]], kt, b1, s1)
 
 vib_sys = VibrationSystem(M, K, C=C)
@@ -222,7 +222,7 @@ vib_sys = VibrationSystem(M, K, C=C)
 vib_sys.add_nl_force(sig0)
 #vib_sys.add_nl_force(sig1)
 
-static_solver = NonlinearSolver()
+#static_solver = NonlinearSolverOMP(config=epmc_config)
 Fv = np.zeros(Ndof)
 # Forcing Vector
 Fv[-1] = 1  # Cosine force vector at arbitrary dof
@@ -250,6 +250,7 @@ print('Symmetrix matrix has a maximum error/max value of: {}'.format(
 print('Using using  (Kpre + Kpre.T)/2 version for eigen analysis')
 
 Kpre = (dRpredX + dRpredX.T) / 2.0 #Gets a really off-kilter prestress for some reason
+Kpre = Kpre_iwan #just to have it set at the right value, for now.
 
 eigvals, eigvecs = static_solver.eigs(Kpre, M) #Temporary
 

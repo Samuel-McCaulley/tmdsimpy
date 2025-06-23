@@ -256,7 +256,7 @@ class SigmoidStiffness(HystereticForce):
         dFdX = self.T @ dfnldunl @ self.Q
         
         return F, dFdX
-    
+    '''
     
     def secant_stiffness(self, dunl):
         return self.kt / 2 *(1 - \
@@ -267,6 +267,21 @@ class SigmoidStiffness(HystereticForce):
         # Derivative of secant_stiffness w.r.t. dunl
         ks = self.secant_stiffness(dunl)
         return ks - self.kt * self.b * np.exp(-(self.b*(np.log(dunl)/np.log(10) - self.s))**2) / (np.sqrt(np.pi) * np.log(10))
+    
+    '''
+    
+    def secant_stiffness(self, dunl):
+        epsilon = 1e-12
+        return self.kt / 2 * (1 - erf(self.b * (np.log10(dunl + epsilon) - self.s)))
+    
+    def secant_stiffness_derivative(self, dunl):
+        epsilon = 1e-12
+        log_term = np.log10(dunl + epsilon)
+        arg = self.b * (log_term - self.s)
+        exp_term = np.exp(-arg**2)
+        dlog_ddunl = 1 / ((dunl + epsilon) * np.log(10))
+        
+        return -self.kt * self.b * exp_term * dlog_ddunl / np.sqrt(np.pi)
     
     def instant_force(self, unl, unldot, update_prev=False, initial_loading=False):
         unl0 = self.up
@@ -289,7 +304,7 @@ class SigmoidStiffness(HystereticForce):
         
         # ChatGPT said this is better 
         #fnl = sign_unldot * dunl * ks + f0
-        fnl = (unl - self.up) * ks + f0
+        fnl = (1 + initial_loading) * (unl - self.up) * ks +f0
         fnl /= (1 + initial_loading)
         # fnl = sign_unldot * (unl - self.up) * ks + f0
         
