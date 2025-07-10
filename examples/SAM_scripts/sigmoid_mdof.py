@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
-from tmdsimpy.nlforces.sigmoid_integral import SigmoidIntegral
+from tmdsimpy.nlforces.hyptanintegral import HypTanIntegral
 from tmdsimpy.nlforces.vector_iwan4 import *
 from tmdsimpy.utils.harmonic import *
 import matplotlib.pyplot as plt
@@ -21,21 +21,28 @@ from scipy import io as sio
 import time
 #%% Iwan Modeling
 
-M = np.diag([1])
+M = np.diag([1, 3, 1, 2])
 C = M*0.005
 c = 0.005
-K = 100*np.array([
-    [5]
+K = 1e8*np.array([
+    [7, -3], [-3, 6]
+])
+
+K = 1e8 * np.array([
+    [7, -3, 0, 0],
+    [-3, 9, -2, 0],
+    [0, -2, 6, -1],
+    [0, 0, -1, 4]
 ])
 
 
 Ndof = M.shape[0]
 
-Q = np.array([[1]])
+Q = np.array([[1, -1, 0, 0]])
 T = Q.T
 
-kt = 1.25*10000
-Fs = 0.2*1000  # N, Match Jenkins
+kt = 1e3
+Fs = 0.2  # N, Match Jenkins
 chi = -0.5  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
@@ -57,7 +64,7 @@ h = np.array(range(h_max+1))
 Nhc = hutils.Nhc(h)
 mode_ind = 0
 ds = 0.008
-dsmax = 0.15
+dsmax = 0.015
 dsmin = 0.002
 # Adjust weighting of amplitude v. other in continuation to hopefully
 # reduce turning around. Higher puts more emphasis on continuation
@@ -67,7 +74,7 @@ FracLam = 1
 static_solver = NonlinearSolver()
 Fv = np.zeros(Ndof)
 # Forcing Vector
-Fv[-1] = 1  # Cosine force vector at arbitrary dof
+Fv[-1] = 1 * 10 ** Astart  # Cosine force vector at arbitrary dof
 
 eigvals_pre, eigvecs_pre = static_solver.eigs(K, M)
 
@@ -200,7 +207,7 @@ plt.show()
 
 plt.plot(Uwxa_full_iwan[:, -1], Uwxa_full_iwan[:, -2])
 plt.show()
-breakpoint()
+
 #%% Sigmoid Stiffness Testing
 
 harmonic_norm_iwan = nlutils.nonlinear_harmonic_norm(Uwxa_full_iwan, Q) 
@@ -212,9 +219,9 @@ alphas = Uwxa_full_iwan[:, -2]
 #b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
 #b1, s1 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 1], frequencies, alphas, verbose = True)
 
-b0, s0 = 10**6.4, 10**-6
+b0, s0 = 1e+3, 1e-6
 #s0 += 5 #make it hella linear in beginning
-sig0 = SigmoidIntegral(Q[[0], :], T[:, [0]], kt, b0, s0)
+sig0 = HypTanIntegral(Q[[0], :], T[:, [0]], kt, b0, s0)
 #sig1 = SigmoidStiffness(Q[[1], :], T[:, [1]], kt, b1, s1)
 
 vib_sys = VibrationSystem(M, K, C=C)
@@ -225,7 +232,7 @@ vib_sys.add_nl_force(sig0)
 #static_solver = NonlinearSolverOMP(config=epmc_config)
 Fv = np.zeros(Ndof)
 # Forcing Vector
-Fv[-1] = 1  # Cosine force vector at arbitrary dof
+Fv[-1] = 1  * 10 ** Astart # Cosine force vector at arbitrary dof
 
 eigvals_pre, eigvecs_pre = static_solver.eigs(K, M)
 
@@ -250,7 +257,6 @@ print('Symmetrix matrix has a maximum error/max value of: {}'.format(
 print('Using using  (Kpre + Kpre.T)/2 version for eigen analysis')
 
 Kpre = (dRpredX + dRpredX.T) / 2.0 #Gets a really off-kilter prestress for some reason
-Kpre = Kpre_iwan #just to have it set at the right value, for now.
 
 eigvals, eigvecs = static_solver.eigs(Kpre, M) #Temporary
 
@@ -284,7 +290,7 @@ continue_config = {'DynamicCtoP': True,
                    'verbose': 1,
                    'xtol': 1e-6*np.sqrt(Uwxa0.shape[0]),
                    'corrector': 'Ortho',  # Ortho, Pseudo
-                   'nsolve_verbose': True,
+                   'nsolve_verbose': False,
                    'FracLam': FracLam,
                    'FracLamList': [0.9, 0.1, 1.0, 0.0],
                    'backtrackStop': 0.05  # stop if backtracks to before lam0
