@@ -93,9 +93,9 @@ class TestHypTan(unittest.TestCase):
         Q = np.array([[1.0]])
         T = np.array([[1.0]])
         
-        kt = 1
-        b = 10**2
-        s = 10**-5
+        kt = 100
+        b = 10**3
+        s = 10**-6
         
         self.hysteretic_force  = HypTanIntegral(Q, T, kt, b, s)
         
@@ -108,7 +108,7 @@ class TestHypTan(unittest.TestCase):
         h = np.array([0, 1, 2, 3])       # Only first harmonic (cosine)
         Nt = 128                # Number of time points per cycle
         w = 1.0                 # Frequency (rad/s)
-        Amplitude = 1e-6     # Displacement amplitude
+        Amplitude = 1e-2     # Displacement amplitude
     
         # Harmonic coefficients for cosine input (zeroth harmonic = 0)
         Unl = [0, Amplitude, 0, 0, 0, 0, 0]

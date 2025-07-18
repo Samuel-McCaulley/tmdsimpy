@@ -38,21 +38,23 @@ K = 1e8 * np.array([
 
 Ndof = M.shape[0]
 
-Q = np.array([[1, -1, 0, 0]])
+
+Q = np.array([[1, -1, 0, 0],
+              [0, 0, 1, -1]])
 T = Q.T
 
-kt = 1e3
-Fs = 0.2  # N, Match Jenkins
-chi = -0.5  # Have a more full hysteresis loop than chi=0.0
+kt = 1e9
+Fs = 2000  # N, Match Jenkins
+chi = 0  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
 iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
-
-#iwan_force1 = Iwan4Force(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
+iwan_force1 = VectorIwan4(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
 
 vib_sys = VibrationSystem(M, K, C = C)
 vib_sys.add_nl_force(iwan_force)
-#vib_sys.add_nl_force(iwan_force1)
+vib_sys.add_nl_force(iwan_force1)
+ref_nlforces = vib_sys.nonlinear_forces
 
 Astart = -8
 Aend = 3
@@ -219,15 +221,17 @@ alphas = Uwxa_full_iwan[:, -2]
 #b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
 #b1, s1 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 1], frequencies, alphas, verbose = True)
 
-b0, s0 = 1e+3, 1e-6
+b0, s0 = 100000, 1e-4
 #s0 += 5 #make it hella linear in beginning
 sig0 = HypTanIntegral(Q[[0], :], T[:, [0]], kt, b0, s0)
-#sig1 = SigmoidStiffness(Q[[1], :], T[:, [1]], kt, b1, s1)
+sig1 = HypTanIntegral(Q[[1], :], T[:, [1]], kt, b0, s0)
 
 vib_sys = VibrationSystem(M, K, C=C)
 
 vib_sys.add_nl_force(sig0)
-#vib_sys.add_nl_force(sig1)
+vib_sys.add_nl_force(sig1)
+
+test_nlforces = vib_sys.nonlinear_forces
 
 #static_solver = NonlinearSolverOMP(config=epmc_config)
 Fv = np.zeros(Ndof)
@@ -290,7 +294,7 @@ continue_config = {'DynamicCtoP': True,
                    'verbose': 1,
                    'xtol': 1e-6*np.sqrt(Uwxa0.shape[0]),
                    'corrector': 'Ortho',  # Ortho, Pseudo
-                   'nsolve_verbose': False,
+                   'nsolve_verbose': True,
                    'FracLam': FracLam,
                    'FracLamList': [0.9, 0.1, 1.0, 0.0],
                    'backtrackStop': 0.05  # stop if backtracks to before lam0

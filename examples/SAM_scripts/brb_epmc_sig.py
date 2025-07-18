@@ -5,7 +5,7 @@ import numpy as np
 import time
 sys.path.append('../..')
 from tmdsimpy.vibration_system import VibrationSystem
-from tmdsimpy.nlforces.vector_iwan4 import VectorIwan4
+from tmdsimpy.nlforces.hyptanintegral import HypTanIntegral
 from tmdsimpy.nlforces.general_poly_stiffness import GenPolyForce
 from tmdsimpy.solvers import NonlinearSolver
 import tmdsimpy.nlutils as hutils_sam
@@ -63,19 +63,18 @@ for i in range(Nnl):
     Lf = T[:, i:i+1]
     
     Fs = iwan_parameters[0] * patch_areas[i // 3]
-    Kt = iwan_parameters[1] * patch_areas[i // 3]
+    Kt = iwan_parameters[1] * patch_areas[i // 3] / 100000
     Chi = iwan_parameters[2]
     Bt = iwan_parameters[3]
     Kn = iwan_parameters[4] * patch_areas[i // 3]
+    b0 = 1e8
+    s0 = 1e-10
     
     tmp_nl_force = None
     if i % 3 == 0 or i % 3 == 1: #x or y 
-        tmp_nl_force = VectorIwan4(Ls, Lf, Kt,
-                                   Fs,
-                                   Chi,
-                                   Bt)
-    else:
+        tmp_nl_force = HypTanIntegral(Ls, Lf, Kt, b0, s0)
         print("here")
+    else:
         tmp_nl_force = GenPolyForce(Ls, Lf, np.array([[Kn]]), np.array([[1]])) #Linear penalty stiffness for the normal dimension
     
     vib_sys.add_nl_force(tmp_nl_force)

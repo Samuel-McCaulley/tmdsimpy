@@ -593,8 +593,30 @@ class NonlinearSolverOMP(NonlinearSolver):
                 sol['njev'] += 1
                 
                 ##TESTING LOOP
-                if i >= 40:
+                if i >= 7:
+                    # Gather debug variables
+                    import sys
+                    import pickle
+                    ref_nlforces = sys._getframe(2).f_locals['ref_nlforces']
+                    test_nlforces = sys._getframe(2).f_locals['test_nlforces']
+                    Nt = sys._getframe(2).f_locals['Nt']
+                    h = sys._getframe(2).f_locals['h']
+                    XlamP0 = sys._getframe(1).f_locals['XlamP0']
+                    Xh = XlamP0[:-3] * 10 ** XlamP0[-1]
+                    w = XlamP0[-3]
+                    debug_data = {
+                        'w': w,
+                        'X': Xh,
+                        'ref_nlforces': ref_nlforces,
+                        'test_nlforces': test_nlforces,
+                        'Nt': Nt,
+                        'h': h}
                     breakpoint()
+                    with open("debug_variables.pkl", "wb") as f:
+                        pickle.dump(debug_data, f)
+                    
+
+                    
                 if np.isnan(np.sum(R)):
                     if verbose: print('Stopping with NaN Residual')
                     no_nan_vals = False
