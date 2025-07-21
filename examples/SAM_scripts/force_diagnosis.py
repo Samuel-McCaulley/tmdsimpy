@@ -45,6 +45,7 @@ def force_diagnosis(ref_nlforces, test_nlforces, U, Nt, w, h):
     '''
     Compares forces and force derivatives (dfduh) for each nonlinear DOF.
     '''
+    plt.close('all')
     Ndnl = ref_nlforces.size
     Nhc = hutils.Nhc(h)
 
@@ -58,7 +59,7 @@ def force_diagnosis(ref_nlforces, test_nlforces, U, Nt, w, h):
         ref_nl_dof = apply_Q_to_U(Q_ref, U, Nhc)
         test_nl_dof = apply_Q_to_U(Q_test, U, Nhc)
         
-        test_nl_dof = np.array([0, 1e-8, 0, 0, 0, 0, 0])
+        #test_nl_dof = np.array([0, 1e-8, 0, 0, 0, 0, 0])
 
         fnl_ref, dfduh_ref = time_series_forces(ref_nl_dof, h, Nt, w, ref_nlforces[i])
         fnl_test, dfduh_test = time_series_forces(test_nl_dof, h, Nt, w, test_nlforces[i])

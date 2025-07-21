@@ -13,6 +13,8 @@ from scipy.special import erfc
 
 # Harmonic Functions for AFT
 from ..utils import harmonic as hutils
+from ..nlutils import *
+
 
 class HypTanIntegral(HystereticForce):
     def __init__(self, Q, T, kt, b, s):
@@ -30,13 +32,36 @@ class HypTanIntegral(HystereticForce):
         '''
         self.multiple = self.kt/(1 + np.tanh(self.b*self.s))
        
-        self.C = self.multiple * (- np.log(np.cosh(-self.b * self.s))/ self.b)
+        self.C = self.multiple / self.b * (-self.b*self.s - np.log(2) + np.log1p(np.exp(2*self.b*self.s)))
        
         assert self.Q.shape[0] == 1, 'Not tested for simultaneous Iwan elements.'
        
         self.init_history()
+        
+    @staticmethod
+    def gather_parameters_from_backbone(Q, XlamP_full):
+        '''
+        Inputs:
+            Q: (Nnl, N), nonlinear DOF matrix
+            XlamP_full: (Ncont, N*Nhc + 3): Continuation full solution
+            
+        Outputs:
+            B, S: (Nnl), parameter vectors
+        '''
+        
+        nlharmnorms = nonlinear_harmonic_norm(Q, XlamP_full)
+        
+        #Find when Xlamp_full[:, -3] changes the most wrt each harmonic norm
+        
+        
+        
+        #Do something with the rate of change of omega to find b, could be som
+        #ething to do with K and kt maybe
+        
+        #Maybe something involving a nonlinear modification to K can be formulated
+        
+        
        
-   
     def set_prestress_mu(self):
         """
         Not implemented for Iwan element.
@@ -256,13 +281,8 @@ class HypTanIntegral(HystereticForce):
         signx = np.sign(unl - self.up)
         x = np.abs(unl - self.up) * (1 +  initial_loading)
     
-        fnl = signx * self.multiple * (x
-    - (
-        np.abs(self.b*(x-self.s))
-        + np.log1p(np.exp(-2*np.abs(self.b*(x-self.s))))
-        - np.log(2)
-      ) / self.b
-  ) + self.C
+        fnl =signx * (self.multiple * self.s - self.multiple/self.b * 
+                      (-np.log(2) + np.log1p(np.exp(-2*self.b*(x-self.s)))) + self.C)
         fnl /= (1 + initial_loading)
         
         fnl += self.fp
@@ -306,6 +326,9 @@ class HypTanIntegral(HystereticForce):
         if update_prev:
             self.dupduh = cst
             self.dfpduh = dfduh
+            
+        if h[0] == 0:
+            dfduh[0, 0, 0] = 0 #Zeroth harmonic should be controlled to zero
     
         return fnl, dfduh, dfdudh
 
@@ -495,18 +518,19 @@ class HypTanIntegral(HystereticForce):
             x = np.abs(unlt[start:stop] - up) # Prevent log(0) in stiffness calc
                
             # Force calculation
-            ft[start:stop] = signx * self.multiple * (x
+            ft[start:stop] = signx * (self.multiple * (x
         - (
             np.abs(self.b*(x-self.s))
             + np.log1p(np.exp(-2*np.abs(self.b*(x-self.s))))
             - np.log(2)
           ) / self.b
-      ) + self.C + f0
+      ) + self.C) + f0
             
             # Key Fix: Use raw harmonic basis (cst) without reversal subtraction
             dfnldunl = self.multiple * (1 - np.tanh(self.b * (x - self.s)))
 
             dfduh_segment = dfnldunl.reshape(-1, 1, 1, 1) * segment_cst.reshape(-1, 1, 1, Nhc)
+            dfduh_segment[:, 0, 0, 0] = np.zeros(dfduh_segment.shape[0])
             
             dfduh[start:stop] = dfduh_segment
     

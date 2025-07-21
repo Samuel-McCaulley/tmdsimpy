@@ -206,7 +206,7 @@ def harmonic_norm(coeffs: np.ndarray, ndof: int, logbase=10):
     Compute per-DOF norms from harmonic coefficients.
 
     Parameters:
-    - coeffs: numpy array of shape (Nhc, M), where M = total coefficients per row
+    - coeffs: numpy array of shape (Ncont, M), where M = total coefficients per row
     - ndof: number of degrees of freedom
     - logbase: base of logarithm used in amplitude column (10 for log10, np.e for natural)
 
@@ -214,7 +214,7 @@ def harmonic_norm(coeffs: np.ndarray, ndof: int, logbase=10):
     - norms: array of shape (Nhc, Ndof) with per-DOF norms
     """
     coeffs = np.atleast_2d(coeffs)
-    Nhc, total_len = coeffs.shape
+    Ncont, total_len = coeffs.shape
     metadata = coeffs[:, -3:]  # frequency, excitation_ratio, amplitude
     data = coeffs[:, :-3]
 
@@ -222,7 +222,7 @@ def harmonic_norm(coeffs: np.ndarray, ndof: int, logbase=10):
     nharmonics = (data.shape[1] - ndof) // (2 * ndof)
 
     # Initialize per-DOF energy array
-    energy = np.zeros((Nhc, ndof))
+    energy = np.zeros((Ncont, ndof))
 
     # h0 terms
     h0 = data[:, :ndof]
@@ -255,7 +255,7 @@ def nonlinear_harmonic_norm(phys_coeffs, Q, logbase=10):
     Compute nonlinear harmonic norms from physical harmonic coefficients and transformation Q.
 
     Parameters:
-        phys_coeffs (np.ndarray): (Nhc, Ndof * Nharm + 3) array in physical coordinates.
+        phys_coeffs (np.ndarray): (Ncont, Ndof * Nhc + 3) array in physical coordinates.
         Q (np.ndarray): (Nnl, Ndof) nonlinear transformation matrix.
         Ndof (int): Number of physical DOFs.
         Nnl (int): Number of nonlinear DOFs (rows of Q).

@@ -24,11 +24,8 @@ import time
 M = np.diag([1, 3, 1, 2])
 C = M*0.005
 c = 0.005
-K = 1e8*np.array([
-    [7, -3], [-3, 6]
-])
 
-K = 1e8 * np.array([
+K = 100 * np.array([
     [7, -3, 0, 0],
     [-3, 9, -2, 0],
     [0, -2, 6, -1],
@@ -43,9 +40,9 @@ Q = np.array([[1, -1, 0, 0],
               [0, 0, 1, -1]])
 T = Q.T
 
-kt = 1e9
-Fs = 2000  # N, Match Jenkins
-chi = 0  # Have a more full hysteresis loop than chi=0.0
+kt = 10
+Fs = 100  # N, Match Jenkins
+chi = -0.1  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
 iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
