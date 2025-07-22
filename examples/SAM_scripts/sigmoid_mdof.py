@@ -36,8 +36,8 @@ K = 100 * np.array([
 Ndof = M.shape[0]
 
 
-Q = np.array([[1, -1, 0, 0],
-              [0, 0, 1, -1]])
+Q = np.array([[1/np.sqrt(2), -1/np.sqrt(2), 0, 0],
+              [0, 0, 1/np.sqrt(2), -1/np.sqrt(2)]])
 T = Q.T
 
 kt = 10
@@ -212,21 +212,12 @@ plt.show()
 harmonic_norm_iwan = nlutils.nonlinear_harmonic_norm(Uwxa_full_iwan, Q) 
 log_hnorm_iwan = np.log10(harmonic_norm_iwan)
 
-frequencies = Uwxa_full_iwan[:, -3]
-alphas = Uwxa_full_iwan[:, -2]
-
-#b0, s0 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 0], frequencies, alphas, verbose = True)
-#b1, s1 = SigmoidStiffness.incomplete_slip_parameters(log_hnorm_iwan[:, 1], frequencies, alphas, verbose = True)
-
-b0, s0 = 100000, 1e-4
-#s0 += 5 #make it hella linear in beginning
-sig0 = HypTanIntegral(Q[[0], :], T[:, [0]], kt, b0, s0)
-sig1 = HypTanIntegral(Q[[1], :], T[:, [1]], kt, b0, s0)
+B, S, K_T = HypTanIntegral.gather_parameters_from_backbone(Q, Uwxa_full_iwan, M)
 
 vib_sys = VibrationSystem(M, K, C=C)
 
-vib_sys.add_nl_force(sig0)
-vib_sys.add_nl_force(sig1)
+for i in range(Q.shape[0]):
+    vib_sys.add_nl_force(HypTanIntegral(Q[[i], :], T[:, [i]], kt, B[i], S[i]))
 
 test_nlforces = vib_sys.nonlinear_forces
 
@@ -272,7 +263,7 @@ epmc_config = {'max_steps': 300,  # balance with reform_freq
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
                'etol': None,
-               'xtol_rel': 1e0,
+               'xtol_rel': None,
                'rtol_rel': None,
                'etol_rel': None,
                'stopping_tol': ['xtol'],  # stop on xtol

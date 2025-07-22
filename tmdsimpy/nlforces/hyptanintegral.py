@@ -39,27 +39,62 @@ class HypTanIntegral(HystereticForce):
         self.init_history()
         
     @staticmethod
-    def gather_parameters_from_backbone(Q, XlamP_full):
+    def gather_parameters_from_backbone(Q, XlamP_full, M):
         '''
         Inputs:
-            Q: (Nnl, N), nonlinear DOF matrix
-            XlamP_full: (Ncont, N*Nhc + 3): Continuation full solution
-            
+            Q: (Nnl, N), nonlinear DOF matrix (each row corresponds to one nonlinear force)
+            XlamP_full: (Ncont, N*Nhc + 3), continuation solution array
+            M: (N, N), full mass matrix
+    
         Outputs:
-            B, S: (Nnl), parameter vectors
+            B: (Nnl,), estimated rates of nonlinearity for each nonlinear force
+            S: (Nnl,), estimated s values (nonlinearity centers for each force)
+            k_t: (Nnl,), estimated tangential stiffnesses
         '''
         
-        nlharmnorms = nonlinear_harmonic_norm(Q, XlamP_full)
-        
-        #Find when Xlamp_full[:, -3] changes the most wrt each harmonic norm
-        
-        
-        
-        #Do something with the rate of change of omega to find b, could be som
-        #ething to do with K and kt maybe
-        
-        #Maybe something involving a nonlinear modification to K can be formulated
-        
+        # Step 1: Harmonic norms per nonlinear DOF
+        nlharmnorms = nonlinear_harmonic_norm(XlamP_full, Q)  # (Ncont, Nnl)
+    
+        # Step 2: Extract omega (rad/s) from last column (-3)
+        omega = XlamP_full[:, -3]  # (Ncont,)
+    
+        Nnl = Q.shape[0]
+        S = np.zeros(Nnl)
+        B = np.zeros(Nnl)
+    
+        # Step 3: For each nonlinear force, estimate s_i from steepest dω/d||x||
+        for i in range(Nnl):
+            x_norm = nlharmnorms[:, i]
+            domega_dx = np.gradient(omega, x_norm)
+            idx_max = np.argmax(np.abs(domega_dx))
+            S[i] = x_norm[idx_max]
+    
+            # Frequency and slope at s_i
+            omega_s = omega[idx_max]
+            slope = np.abs(domega_dx[idx_max])
+    
+            # Modal mass for ith nonlinear DOF
+            modal_mass = Q[i] @ M @ Q[i].T
+    
+            # Tangential stiffness k_t_i
+            k_t_i = modal_mass * (omega[0]**2 - omega[-1]**2)
+    
+            # Approximate m_i = 1 + tanh(b*s) -- assume b ~ 1 for first pass
+            m_i = 1 + np.tanh(S[i])
+    
+            # Compute b_i using the formula
+            if k_t_i != 0 and slope != 0:
+                B[i] = (2 * m_i * modal_mass * omega_s * slope) / k_t_i
+            else:
+                B[i] = 0.0  # handle division by zero gracefully
+    
+        # Step 4: Tangential stiffness for all nonlinear DOFs (vectorized)
+        modal_masses = np.einsum('ij,jk,ik->i', Q, M, Q)
+        delta_omega_sq = omega[0]**2 - omega[-1]**2
+        k_t = modal_masses * delta_omega_sq
+    
+        return B, S, k_t
+
         
        
     def set_prestress_mu(self):
