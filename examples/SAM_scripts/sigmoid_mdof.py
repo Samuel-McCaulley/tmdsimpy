@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
-from tmdsimpy.nlforces.hyptanintegral import HypTanIntegral
+from tmdsimpy.nlforces.arcstiffness import ArcStiffness
 from tmdsimpy.nlforces.vector_iwan4 import *
 from tmdsimpy.utils.harmonic import *
 import matplotlib.pyplot as plt
@@ -40,9 +40,9 @@ Q = np.array([[1/np.sqrt(2), -1/np.sqrt(2), 0, 0],
               [0, 0, 1/np.sqrt(2), -1/np.sqrt(2)]])
 T = Q.T
 
-kt = 10
-Fs = 100  # N, Match Jenkins
-chi = -0.1  # Have a more full hysteresis loop than chi=0.0
+kt = 100
+Fs = 0.214  # N, Match Jenkins
+chi = -0.3  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
 iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
@@ -54,7 +54,7 @@ vib_sys.add_nl_force(iwan_force1)
 ref_nlforces = vib_sys.nonlinear_forces
 
 Astart = -8
-Aend = 3
+Aend = 5
 
 # Normal - settings for higher accuracy as used in previous papers
 h_max = 3  # harmonics 0, 1, 2, 3
@@ -212,12 +212,12 @@ plt.show()
 harmonic_norm_iwan = nlutils.nonlinear_harmonic_norm(Uwxa_full_iwan, Q) 
 log_hnorm_iwan = np.log10(harmonic_norm_iwan)
 
-B, S, K_T = HypTanIntegral.gather_parameters_from_backbone(Q, Uwxa_full_iwan, M)
+B, S, K_T = ArcStiffness.gather_parameters_from_backbone(Q, Uwxa_full_iwan, M, K)
 
 vib_sys = VibrationSystem(M, K, C=C)
 
 for i in range(Q.shape[0]):
-    vib_sys.add_nl_force(HypTanIntegral(Q[[i], :], T[:, [i]], kt, B[i], S[i]))
+    vib_sys.add_nl_force(ArcStiffness(Q[[i], :], T[:, [i]], K_T, B[i], S[i]))
 
 test_nlforces = vib_sys.nonlinear_forces
 
@@ -258,12 +258,12 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
 
 
 epmc_config = {'max_steps': 300,  # balance with reform_freq
-               'reform_freq': 2,  # >1 corresponds to BFGS
+               'reform_freq': 1,  # >1 corresponds to BFGS
                'verbose': True,
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
                'etol': None,
-               'xtol_rel': None,
+               'xtol_rel': 1e0,
                'rtol_rel': None,
                'etol_rel': None,
                'stopping_tol': ['xtol'],  # stop on xtol
@@ -282,7 +282,7 @@ continue_config = {'DynamicCtoP': True,
                    'verbose': 1,
                    'xtol': 1e-6*np.sqrt(Uwxa0.shape[0]),
                    'corrector': 'Ortho',  # Ortho, Pseudo
-                   'nsolve_verbose': True,
+                   'nsolve_verbose': False,
                    'FracLam': FracLam,
                    'FracLamList': [0.9, 0.1, 1.0, 0.0],
                    'backtrackStop': 0.05  # stop if backtracks to before lam0

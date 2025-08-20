@@ -91,6 +91,31 @@ def force_diagnosis(ref_nlforces, test_nlforces, U, Nt, w, h):
 
         axarr[-1].set_xlabel('Time Step')
         fig_dfduh.tight_layout(rect=[0, 0, 1, 0.96])  # leave space for suptitle
+        
+        dFdUnl_test = hutils.get_fourier_coeff(h, dfduh_test)
+        dFdUnl_ref = hutils.get_fourier_coeff(h, dfduh_ref)
+
+        # Define a tolerance for what counts as "approximately zero"
+        tol = 1e-12  
+        
+        # Mask to identify "small" values in denominator and numerator
+        small_ref = np.isclose(dFdUnl_ref, 0, atol=tol)
+        small_test = np.isclose(dFdUnl_test, 0, atol=tol)
+        
+        # Initialize output with NaN
+        ratio = np.full_like(dFdUnl_ref, np.nan, dtype=float)
+        
+        # Case 1: both are ~0 → set ratio = 1 (or 0 depending on your meaning)
+        ratio[small_ref & small_test] = 1.0  
+        
+        # Case 2: ref ~0 but test not ~0 → mark as inf
+        ratio[small_ref & ~small_test] = np.inf  
+        
+        # Case 3: regular division
+        ratio[~small_ref] = dFdUnl_test[~small_ref] / dFdUnl_ref[~small_ref]
+        
+        print(ratio)
+        
 
     plt.tight_layout()
     plt.show()

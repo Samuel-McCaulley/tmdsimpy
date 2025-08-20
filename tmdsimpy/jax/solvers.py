@@ -611,10 +611,10 @@ class NonlinearSolverOMP(NonlinearSolver):
                         'test_nlforces': test_nlforces,
                         'Nt': Nt,
                         'h': h}
-                    breakpoint()
+
                     with open("debug_variables.pkl", "wb") as f:
                         pickle.dump(debug_data, f)
-                    
+                    breakpoint()
 
                     
                 if np.isnan(np.sum(R)):
