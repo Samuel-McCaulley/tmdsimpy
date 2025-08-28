@@ -593,7 +593,7 @@ class NonlinearSolverOMP(NonlinearSolver):
                 sol['njev'] += 1
                 
                 ##TESTING LOOP
-                if i >= 7:
+                if i >= 20:
                     # Gather debug variables
                     import sys
                     import pickle

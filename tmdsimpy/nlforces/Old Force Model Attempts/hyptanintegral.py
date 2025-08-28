@@ -11,14 +11,12 @@ import traceback
 from scipy.special import erf
 from scipy.special import erfc
 from scipy.linalg import eigh
-from scipy.optimize import least_squares
-
 # Harmonic Functions for AFT
 from ..utils import harmonic as hutils
 from ..nlutils import *
 
 
-class ArcStiffness(HystereticForce):
+class HypTanIntegral(HystereticForce):
     def __init__(self, Q, T, kt, b, s):
        
         self.Q = Q
@@ -32,185 +30,160 @@ class ArcStiffness(HystereticForce):
         Force defined as
         f(x) = multiple * (operation(x) - intercept)
         '''
-        self.d = (1 + 2/np.pi * np.arctan(self.b*self.s))/self.kt
+        self.multiple = self.kt/(1 + np.tanh(self.b*self.s))
        
-        self.C = -np.log1p(self.b**2*self.s**2)/np.pi/self.b + 2*self.s*np.arctan(self.b*self.s)/np.pi
+        self.C = self.multiple / self.b * (-self.b*self.s - np.log(2) + np.log1p(np.exp(2*self.b*self.s)))
        
         assert self.Q.shape[0] == 1, 'Not tested for simultaneous Iwan elements.'
        
         self.init_history()
         
-    def knorm_model(x, b, s):
-        """
-        x: array of log10(amplitude)
-        b, s: scalars (b>0, s>0)
-        returns model values same shape as x
-        """
-        C = 2.0 / np.pi
-        A = np.arctan(b * (np.power(10.0, x) - s))   # arctan(b*(10^x - s))
-        denom = 1.0 + C * np.arctan(b * s)           # 1 + 2/pi * arctan(bs)
-        return (1.0 - C * A) / denom
-
-    def fit_b_s_knorm(x, y, b0=None, s0=None, bounds=None, verbose=False):
-        """
-        Fit (b,s) so that knorm_model(x,b,s) approx y in least-squares sense.
-        Inputs:
-          x: 1D array of log10(nlharmnorm)
-          y: 1D array of k_nl / k_t (same length)
-          b0, s0: optional initial guesses (scalars)
-          bounds: optional ((b_lo,s_lo),(b_hi,s_hi)); if None, use defaults
-        Returns dict with keys: b, s, y_fit, res (least_squares result)
-        """
-        x = np.asarray(x).ravel()
-        y = np.asarray(y).ravel()
-        if x.shape != y.shape:
-            raise ValueError("x and y must have same shape")
-    
-        # sensible defaults
-        if bounds is None:
-            bounds = ([1e-9, 1e-12], [1e9, 1e12])   # enforce b>0, s>=small positive; widen as needed
-    
-        if s0 is None:
-            s0 = 10.0**(np.median(x))   # initial pivot guess in linear amplitude space
-        if b0 is None:
-            # heuristic: width between 10th and 90th percentiles in linear space
-            p10, p90 = np.percentile(x, [10, 90])
-            width_lin = max(np.power(10.0, p90) - np.power(10.0, p10), 1e-6)
-            b0 = max(4.0 / width_lin, 1e-3)
-    
-        p0 = np.array([float(b0), float(s0)])
-    
-        def resid(p):
-            b, s = p
-            return ArcStiffness.knorm_model(x, b, s) - y
-    
-        if verbose:
-            print("initial guess b0, s0:", p0, "bounds:", bounds)
-    
-        res = least_squares(resid, p0, bounds=bounds, xtol=1e-12, ftol=1e-12, gtol=1e-12)
-        b_fit, s_fit = float(res.x[0]), float(res.x[1])
-        y_fit = ArcStiffness.knorm_model(x, b_fit, s_fit)
-    
-        return {"b": b_fit, "s": s_fit, "y_fit": y_fit, "res": res}
-    
-        
-    
     @staticmethod
-    def gather_parameters_from_backbone(Q, XlamP_full, M, K, mode_select='nearest'):
-        """
-        Minimal estimator (assumes denominators nonzero and k_nl finite) that also
-        computes nonlinear harmonic norms.
-    
+    def gather_parameters_from_backbone(Q, XlamP_full, M, K):
+        '''
         Inputs:
-          Q : (Nnl, N)
-          XlamP_full : (Ncont, N*Nhc + 3)  (omega at index -3)
-          M, K : (N, N)
+            Q: (Nnl, N), nonlinear DOF matrix (each row corresponds to one nonlinear force)
+            XlamP_full: (Ncont, N*Nhc + 3), continuation solution array
+            M: (N, N), full mass matrix
     
-        Returns:
-          B              : (Nnl,) local slopes dk/dA at crossing interval (or nan if no crossing)
-          S              : (Nnl,) interpolated amplitude (nlharmnorm) where k_nl == kt/2 (or nan)
-          k_nl           : (Ncont,) scalar stiffness per continuation line
-          kt             : scalar chosen as k_nl[0]
-          nlharmnorms    : (Ncont, Nnl) nonlinear harmonic norms from nonlinear_harmonic_norm(...)
-        """
-        # local (tiny) helper to extract real phi_nl from X row (first-harmonic phasor)
-        def _phi_nl_from_row_real(Xrow, N):
-            coeff_len = Xrow.size - 3
-            Nhc = coeff_len // N
-            blocks = [Xrow[i*N:(i+1)*N] for i in range(Nhc)]
-            if Nhc >= 3:
-                # blocks: [h0, h1c, h1s, h2c, h2s, ...]
-                return np.real(blocks[1] + 1j * blocks[2])
-            elif Nhc == 2:
-                return np.real(blocks[1])
-            else:
-                return np.real(blocks[0])
+        Outputs:
+            B: (Nnl,), estimated rates of nonlinearity for each nonlinear force
+            S: (Nnl,), estimated s values (nonlinearity centers for each force)
+            k_t: (Nnl,), estimated tangential stiffnesses
+        '''
+        
+        # Step 1: Harmonic norms per nonlinear DOF
+        nlharmnorms = nonlinear_harmonic_norm(XlamP_full, Q)  # (Ncont, Nnl)
     
-        # eigenpairs once (generalized problem K phi = lambda M phi)
-        try:
-            from scipy.linalg import eigh
-            evals, evecs = eigh(K, M)
-        except Exception:
-            # fallback (requires M invertible)
-            evals_c, evecs = np.linalg.eig(np.linalg.solve(M, K))
-            evals = np.real_if_close(evals_c, tol=1000)
-            evecs = np.real_if_close(evecs, tol=1000)
-    
-        omegas_lin = np.sqrt(np.maximum(evals, 0.0))
-    
-        Ncont = XlamP_full.shape[0]
-        N = M.shape[0]
-        Nnl = Q.shape[0]
-    
-        # precompute Q^T Q
-        QTQ = Q.T @ Q
-    
-        # extract omegas from continuation rows (assumed at -3)
-        omegas = XlamP_full[:, -3].astype(float)
-    
-        k_nl = np.empty(Ncont, dtype=float)
-    
-        for idx in range(Ncont):
-            omega_nl = float(omegas[idx])
-    
-            # choose linear mode index (nearest frequency)
-            if mode_select == 'nearest':
-                l = np.argmin(np.abs(omegas_lin - omega_nl))
-            else:
-                l = 0
-    
-            omega_l = omegas_lin[l]
-            phi_l = evecs[:, l].astype(float)
-    
-            # reconstruct phi_nl as real first-harmonic phasor
-            Xrow = XlamP_full[idx, :]
-            phi_nl = _phi_nl_from_row_real(Xrow, N).astype(float)
-    
-            # normalize to modal mass = 1
-            mnorm_nl = phi_nl.T @ (M @ phi_nl)
-            if np.abs(mnorm_nl) > 0:
-                phi_nl = phi_nl / np.sqrt(mnorm_nl)
-            mnorm_l = phi_l.T @ (M @ phi_l)
-            if np.abs(mnorm_l) > 0:
-                phi_l = phi_l / np.sqrt(mnorm_l)
-    
-            # residual and scalar k_nl (real arithmetic)
-            R = M @ (omega_nl**2 * phi_nl - omega_l**2 * phi_l) - (K @ phi_nl) + (K @ phi_l)
-            num = phi_nl.T @ R
-            den = float(phi_nl.T @ (QTQ @ phi_nl))   # = || Q phi_nl ||^2
-    
-            # (per your instruction assume den != 0 and k_nl finite)
-            k_nl[idx] = float(num / den)
-    
-        # scalar reference stiffness
-        kt = k_nl[0]
-        knl_normalized = k_nl / kt
-    
-        # compute nonlinear harmonic norms (user-supplied function)
-        nlharmnorms = nonlinear_harmonic_norm(XlamP_full, Q)   # shape (Ncont, Nnl)
-    
-        # Prepare outputs S and B
-        S = np.full(Nnl, np.nan, dtype=float)
-        B = np.full(Nnl, np.nan, dtype=float)
-
-        # For each nonlinear DOF, find where k_nl crosses target and interpolate S from nlharmnorms
-        for nl in range(Nnl):
-            nlharmnorm_log = np.log10(nlharmnorms[:, nl].reshape(-1))
-            sol = ArcStiffness.fit_b_s_knorm(nlharmnorm_log, knl_normalized)
+        # Step 2: Extract omega (rad/s) from last column (-3)
+        omega = XlamP_full[:, -3]  # (Ncont,)
+        
+        omega_e = omega[0]
+        eigenvalues, eigenvecs = eigh(K, M)
+        omega_f = np.sqrt(eigenvalues[0])
+        phi_e  = extract_first_harmonic_mode(XlamP_full[-1, :], M.shape[0]) #First eigenvector
+        phi_f = eigenvecs[:, 0]
+        
+        k_nl_list = []
+        k_t_list = []
+        
+        for i in range(XlamP_full.shape[0] - 1):
             
-            #Continue this
+            omega_nl = omega[i + 1]
+            phi_nl = extract_first_harmonic_mode(XlamP_full[i + 1, :], M.shape[0]) #Checkpoint eigenvector
             
-            B[nl] = sol['b']
-            S[nl] = sol['s']
+            num_nl = phi_nl.T @ (M @ (omega_nl**2 * phi_nl - omega_f**2 * phi_f) - np.linalg.solve(M, K)@(phi_nl - phi_f))
+            den_nl = phi_nl.T @ Q.T @ Q @ phi_nl
+            k_nl = num_nl / den_nl
             
-            print('please do this')
-    
-        return B, S, kt
+            num_t = phi_e.T @ (M @ (omega_e**2 * phi_e - omega_nl**2 * phi_nl) - np.linalg.solve(M, K + k_nl * Q.T @ Q)@(phi_e - phi_nl))
+            den_t = phi_e.T @ Q.T @ Q @ phi_e
+            k_t = k_nl + num_t/den_t
+            
+            k_nl_list.append(k_nl)
+            k_t_list.append(k_t)
 
 
+        '''
+        Fitting b, s
+        '''
+                
+        k_nl_array = np.array(k_nl_list)
+        k_t_array = np.array(k_t_list)
+        x_array = np.mean(nlharmnorms[1:], axis = 1)  # Assuming x is frequency or some equivalent measure
+        #x_array is in linear scale
+        
+        # Normalize k_nl by k_t
+        y_data = k_nl_array / np.mean(k_t_array)
+        
+        def knl_model_logarithmic(x, b, s):
+            numerator = (1 - np.tanh(b * (np.log(x) - s)))
+            denominator = 2
+            return numerator / denominator
+
+        def knl_model_linear(x, b, s):
+            numerator = (1 - np.tanh(b * (x - s)))
+            denominator = 1 + np.tanh(b*s)
+            return numerator / denominator
+
+        # Initial guesses for b and s
+        b0 = 1.0
+        s0 = np.median(np.log(x_array))
+        
+        popt, pcov = curve_fit(knl_model_logarithmic, x_array, y_data, p0=[b0, s0])
+        b_fit, s_fit = popt
+
+        x_fit = np.linspace(min(x_array), max(x_array), 300)
+        y_fit = knl_model_logarithmic(x_fit, b_fit, s_fit)
+        
+        plt.figure()
+        plt.plot(x_array, y_data, 'o', label='Data')
+        plt.plot(x_fit, y_fit, '-', label=f'Fit: b={b_fit:.3f}, s={s_fit:.3f}')
+        plt.xlabel('x')
+        plt.ylabel('k_nl / k_t')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+        
+        
+        s_linear = np.exp(s_fit)
+        
+        y_linear_fit = knl_model_linear(x_fit, b_fit, s_linear)
+
+        plt.figure()
+        plt.plot(x_array, y_data, 'o', label='Data')
+        plt.plot(x_fit, y_linear_fit, '-', label=f'Fit: b={b_fit:.3f}, s={s_linear:.3f}')
+        plt.xlabel('x')
+        plt.ylabel('k_nl / k_t')
+        plt.legend()
+        plt.grid(True)
+        plt.show()    
+        
+        
+        return np.mean(np.array(k_t_list)), b_fit, s_linear
 
         
        
+    def set_prestress_mu(self):
+        """
+        Not implemented for Iwan element.
+       
+        Returns
+        -------
+        None
+       
+        Notes
+        -----
+        Intention is to
+        set friction coefficient to zero while saving initial value in a
+        different variable. Useful for prestress analysis.
+       
+        This is non-trivial for the Iwan implementation, so it is not
+        yet implemented. One can simply not include the nonlinear force
+        to get the same effect with the Iwan element.
+       
+        """
+       
+        assert False, 'Prestress mu is not implemented for Iwan Element.'
+       
+    def init_history(self):
+        """
+        Method to initialize history variables for the hysteretic model.
+       
+        This consists of setting previous displacements and forces
+        to be zero.
+
+        Returns
+        -------
+        None.
+
+        """
+       
+        self.up = 0
+        self.fp = 0
+       
+        return
+   
     def set_prestress_mu(self):
         """
         Not implemented for Iwan element.
@@ -303,6 +276,46 @@ class ArcStiffness(HystereticForce):
        
         unl = self.Q @ X
        
+        fnl, dfnldunl, dfnlsliders_dunl = self.instant_force(unl,
+                                                    np.zeros_like(unl),
+                                                    update_prev=update_hist)
+       
+        fnl = np.atleast_1d(fnl)
+        dfnldunl = np.atleast_2d(dfnldunl)
+           
+        F = self.T @ fnl
+       
+        dFdX = self.T @ dfnldunl @ self.Q
+       
+        return F, dFdX
+       
+   
+    
+   
+    def force(self, X, update_hist=False):
+        """
+        Calculate global nonlinear forces for some global displacement vector.
+
+        Parameters
+        ----------
+        X : (N,) numpy.ndarray
+            Global displacements
+        update_hist : bool, optional
+            Flag to save displacement and force from the evaluation as history
+            variables for subsequent calls to this function.
+            The default is False.
+
+        Returns
+        -------
+        F : (N,) numpy.ndarray
+            Global nonlinear force
+        dFdX : (N,N) numpy.ndarray
+            Derivative of `F` with respect to `X`.
+       
+        """
+       
+        unl = self.Q @ X
+       
         fnl, dfnldunl = self.instant_force(unl,
                                                     np.zeros_like(unl),
                                                     update_prev=update_hist)
@@ -315,6 +328,7 @@ class ArcStiffness(HystereticForce):
         dFdX = self.T @ dfnldunl @ self.Q
        
         return F, dFdX
+       
    
     def instant_force(self, unl, unldot, update_prev=False, initial_loading = False):
         """
@@ -349,18 +363,13 @@ class ArcStiffness(HystereticForce):
         signx = np.sign(unl - self.up)
         x = np.abs(unl - self.up) * (1 +  initial_loading)
     
-        fnl = signx * (
-            (np.log(self.b**2 * (x - self.s)**2 + 1) / (np.pi * self.b)
-             - 2 * (x - self.s) * np.arctan(self.b * (x - self.s)) / np.pi
-             + x + self.C) / self.d
-        )
-
+        fnl =signx * (self.multiple * self.s - self.multiple/self.b * 
+                      (-np.log(2) + np.log1p(np.exp(-2*self.b*(x-self.s)))) + self.C)
         fnl /= (1 + initial_loading)
         
         fnl += self.fp
        
-        dfnldunl = (1 - (2 / np.pi) * np.arctan(self.b * (x - self.s))) / self.d
-
+        dfnldunl = self.multiple * (1 - np.tanh(self.b * (x - self.s)))
        
         if update_prev:
             # Update History
@@ -591,14 +600,16 @@ class ArcStiffness(HystereticForce):
             x = np.abs(unlt[start:stop] - up) # Prevent log(0) in stiffness calc
                
             # Force calculation
-            ft[start:stop] = signx * (
-                (np.log(self.b**2 * (x - self.s)**2 + 1) / (np.pi * self.b)
-                 - 2 * (x - self.s) * np.arctan(self.b * (x - self.s)) / np.pi
-                 + x + self.C) / self.d
-            ) + f0
+            ft[start:stop] = signx * (self.multiple * (x
+        - (
+            np.abs(self.b*(x-self.s))
+            + np.log1p(np.exp(-2*np.abs(self.b*(x-self.s))))
+            - np.log(2)
+          ) / self.b
+      ) + self.C) + f0
             
             # Key Fix: Use raw harmonic basis (cst) without reversal subtraction
-            dfnldunl = (1 - (2 / np.pi) * np.arctan(self.b * (x - self.s))) / self.d
+            dfnldunl = self.multiple * (1 - np.tanh(self.b * (x - self.s)))
 
             dfduh_segment = dfnldunl.reshape(-1, 1, 1, 1) * segment_cst.reshape(-1, 1, 1, Nhc)
             dfduh_segment[:, 0, 0, 0] = np.zeros(dfduh_segment.shape[0])

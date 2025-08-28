@@ -21,49 +21,45 @@ from scipy import io as sio
 import time
 #%% Iwan Modeling
 
-M = np.diag([1, 3, 1, 2])
+M = np.diag([1])
 C = M*0.005
 c = 0.005
 
-K = 100 * np.array([
-    [7, -3, 0, 0],
-    [-3, 9, -2, 0],
-    [0, -2, 6, -1],
-    [0, 0, -1, 4]
+K = 1 * np.array([
+    [1]
 ])
 
 
 Ndof = M.shape[0]
 
 
-Q = np.array([[1/np.sqrt(2), -1/np.sqrt(2), 0, 0],
-              [0, 0, 1/np.sqrt(2), -1/np.sqrt(2)]])
+Q = np.array([[1]])
 T = Q.T
 
-kt = 100
-Fs = 0.214  # N, Match Jenkins
+kt = 10000
+Fs = 100  # N, Match Jenkins
 chi = -0.3  # Have a more full hysteresis loop than chi=0.0
 beta = 0.0  # Smooth Transition
 
 iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
-iwan_force1 = VectorIwan4(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
+#iwan_force1 = VectorIwan4(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
 
 vib_sys = VibrationSystem(M, K, C = C)
 vib_sys.add_nl_force(iwan_force)
-vib_sys.add_nl_force(iwan_force1)
+#vib_sys.add_nl_force(iwan_force1)
 ref_nlforces = vib_sys.nonlinear_forces
 
 Astart = -8
-Aend = 5
+Aend = 3
 
 # Normal - settings for higher accuracy as used in previous papers
-h_max = 3  # harmonics 0, 1, 2, 3
+h_max = 1  # harmonics 0, 1, 2, 3
 Nt = 1 << 7  # 2**7 = 128 AFT steps
 h = np.array(range(h_max+1))
 Nhc = hutils.Nhc(h)
 mode_ind = 0
-ds = 0.008
-dsmax = 0.015
+ds = 0.08
+dsmax = 0.15
 dsmin = 0.002
 # Adjust weighting of amplitude v. other in continuation to hopefully
 # reduce turning around. Higher puts more emphasis on continuation
@@ -257,7 +253,7 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
                                                             calc_grad=calc_grad)
 
 
-epmc_config = {'max_steps': 300,  # balance with reform_freq
+epmc_config = {'max_steps': 25,  # balance with reform_freq
                'reform_freq': 1,  # >1 corresponds to BFGS
                'verbose': True,
                'xtol': None,  # Just use the one passed from continuation

@@ -116,6 +116,9 @@ def force_diagnosis(ref_nlforces, test_nlforces, U, Nt, w, h):
         
         print(ratio)
         
+        print(dFdUnl_ref)
+        print(dFdUnl_test)
+        
 
     plt.tight_layout()
     plt.show()
