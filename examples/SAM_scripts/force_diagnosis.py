@@ -10,6 +10,10 @@ import pickle
 def time_series_forces(Unl, h, Nt, w, nl_force):
    
     Unl = np.reshape(Unl, ((-1,1)))
+    
+    Unl = Unl * 3e-2
+    
+    Unl = np.array([[1e-4], [2e-0], [6e-1]]) * 1e-3
 
     # Nonlinear displacements, velocities in time
     unlt = hutils.time_series_deriv(Nt, h, Unl, 0) # Nt x Ndnl
@@ -145,6 +149,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Run the diagnostic plot
+    for force in ref_nlforces:
+        force.init_history()
+    for force in test_nlforces:
+        force.init_history()
     force_diagnosis(ref_nlforces, test_nlforces, U, Nt, w, h)
 
     

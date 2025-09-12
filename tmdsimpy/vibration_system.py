@@ -713,6 +713,11 @@ class VibrationSystem:
 
         """
         
+        '''
+        SAM DELETE SOON
+        '''
+        #print([float(f"{float(x):.2e}") for x in Uwxa])
+        
         # Shapes and Sizes
         Nhc = hutils.Nhc(h) # Number of Harmonic Components
         Ndof = self.M.shape[0]

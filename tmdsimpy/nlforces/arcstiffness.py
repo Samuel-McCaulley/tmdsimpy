@@ -576,6 +576,7 @@ class ArcStiffness(HystereticForce):
             if stop <= start:
                 continue
             
+            dupduh = cst[start-1, :]
     
             # Get previous state from critical point
             up = unlt[start-1, :]
@@ -587,6 +588,7 @@ class ArcStiffness(HystereticForce):
             # Current segment data
             segment_cst = cst[start:stop, :]
     
+            delta_cst = segment_cst - dupduh
             signx = np.sign(unlt[start:stop] - up)
             x = np.abs(unlt[start:stop] - up) # Prevent log(0) in stiffness calc
                
@@ -600,8 +602,10 @@ class ArcStiffness(HystereticForce):
             # Key Fix: Use raw harmonic basis (cst) without reversal subtraction
             dfnldunl = (1 - (2 / np.pi) * np.arctan(self.b * (x - self.s))) / self.d
 
-            dfduh_segment = dfnldunl.reshape(-1, 1, 1, 1) * segment_cst.reshape(-1, 1, 1, Nhc)
+            dfduh_segment = dfnldunl.reshape(-1, 1, 1, 1) * delta_cst.reshape(-1, 1, 1, Nhc)
             dfduh_segment[:, 0, 0, 0] = np.zeros(dfduh_segment.shape[0])
+            
+            dfduh_segment += dfduh_crit[i, :]
             
             dfduh[start:stop] = dfduh_segment
     

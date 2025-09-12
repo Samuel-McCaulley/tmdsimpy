@@ -803,7 +803,11 @@ class Continuation:
                 
                 # Predict Direction
                 dirC = self.predict(fun, XlamP0, XlamPprev, dirC)
-                                
+                '''
+                if XlamP0[-1] > -1.6:
+                    breakpoint()
+                    self.config['nsolve_verbose'] = False
+                '''
                 # Correct
                 correct_fun = lambda XlamC, calc_grad=True : \
                         self.correct_res(fun, XlamC, XlamP0/self.CtoP, 

@@ -1,17 +1,20 @@
 # Functions for vectorizing a Iwan (4-par) model AFT calculation
-
+import matplotlib.pyplot as plt
 import numpy as np
 # from .nonlinear_force import HystereticForce
 
 # Harmonic Functions for AFT
 from ..utils import harmonic as hutils
 
-from .iwan4_element import Iwan4Force 
+from .nonlinear_force import HystereticForce 
 
 
-class VectorIwan4(Iwan4Force):
+class ArcStiffnessRewrite(HystereticForce):
     """
     4-Parameter Iwan Element Nonlinearity with vectorized force calculations.
+    
+    
+    Im trying to get this changed to match Iwan4 in the fact that it works
 
     Parameters
     ----------
@@ -70,6 +73,303 @@ class VectorIwan4(Iwan4Force):
        Joints. J. Appl. Mech 72, 752–760.
 
     """
+    
+    def __init__(self, Q, T, kt, Fs, chi, beta, Nsliders=100, alphasliders=1.0):
+        
+        self.Q = Q
+        self.T = T
+        self.kt = kt*1.0
+        self.Fs = Fs*1.0
+        self.chi = chi*1.0
+        self.beta = beta*1.0
+        self.Nsliders = Nsliders
+        
+        self.phimax = self.Fs * (1 + self.beta) / self.kt \
+                        / (self.beta + (self.chi + 1)/(self.chi+2))
+        
+        self.R = self.Fs*(self.chi + 1) / self.phimax**(self.chi+2)\
+                        / (self.beta + (self.chi + 1)/(self.chi+2))
+                        
+        self.S = self.Fs*self.beta / self.phimax\
+                        / (self.beta + (self.chi + 1)/(self.chi+2))
+        
+        # self.S = self.Fs / self.phimax *(self.beta / (self.beta + (self.chi+1)/(self.chi+2)))
+                        
+        if(alphasliders > 1):
+            deltaphi1 = self.phimax * (alphasliders - 1) / (alphasliders**(Nsliders) - 1)
+        else:
+            deltaphi1 = self.phimax / Nsliders
+        
+        delta_phis = deltaphi1 * alphasliders**np.array(range(Nsliders))
+        
+        self.phisliders = np.concatenate( (np.cumsum(delta_phis) - delta_phis*0.5,\
+                                          np.array([self.phimax])) )
+        
+        # Segalman, 2005, eqn 25
+        R = self.Fs*(self.chi + 1) / (self.phimax**(self.chi+2) \
+                                     *(self.beta + (self.chi + 1)/(self.chi + 2)))
+        
+        # Segalman, 2005, eqn 26
+        S = self.Fs*self.beta / (self.phimax \
+                                   *(self.beta + (self.chi + 1)/(self.chi + 2)))
+        
+        # These absorb kt
+        self.sliderweights = np.concatenate( \
+                             (R * self.phisliders[:-1]**(self.chi)*delta_phis, \
+                              np.atleast_1d(S)) )
+        
+        assert self.Q.shape[0] == 1, 'Not tested for simultaneous Iwan elements.'
+        
+        self.init_history()
+        
+    
+    def set_prestress_mu(self):
+        """
+        Not implemented for Iwan element.
+        
+        Returns
+        -------
+        None
+        
+        Notes
+        -----
+        Intention is to 
+        set friction coefficient to zero while saving initial value in a 
+        different variable. Useful for prestress analysis.
+        
+        This is non-trivial for the Iwan implementation, so it is not
+        yet implemented. One can simply not include the nonlinear force
+        to get the same effect with the Iwan element.
+        
+        """
+        
+        assert False, 'Prestress mu is not implemented for Iwan Element.'
+        
+    def init_history(self):
+        """
+        Method to initialize history variables for the hysteretic model.
+        
+        This consists of setting previous displacements and forces
+        to be zero.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        self.up = 0
+        self.fp = 0
+        self.fpsliders = np.zeros((self.Nsliders+1)) # Slider at the delta is not counted in Nsliders
+        
+        return
+        
+    def init_history_harmonic(self, unlth0, h=np.array([0])):
+        """
+        Initialize history variables for harmonic (AFT) analysis.
+
+        Parameters
+        ----------
+        unlth0 : (Nnl,) numpy.ndarray
+            Zeroth harmonic contributions to a time series of displacements.
+            History displacements are initialized at this value.
+        h : numpy.ndarray, sorted
+            List of harmonics used in subsequent analysis.
+            The default is `numpy.array([0])`.
+
+        Returns
+        -------
+        None.
+
+        """
+                
+        self.up = unlth0
+        self.fp = 0
+        self.fpsliders = np.zeros((self.Nsliders+1)) # Slider at the delta is not counted in Nsliders
+        self.dupduh = np.zeros((hutils.Nhc(h)))
+        
+        self.dupduh[0] = 1 # Base slider position taken as zeroth harmonic 
+        
+        self.dfpduh = np.zeros((1,hutils.Nhc(h)))
+        self.dfpslidersduh = np.zeros((self.Nsliders+1,hutils.Nhc(h)))
+        
+        return
+    
+    def force(self, X, update_hist=False):
+        """
+        Calculate global nonlinear forces for some global displacement vector.
+
+        Parameters
+        ----------
+        X : (N,) numpy.ndarray
+            Global displacements
+        update_hist : bool, optional
+            Flag to save displacement and force from the evaluation as history
+            variables for subsequent calls to this function.
+            The default is False.
+
+        Returns
+        -------
+        F : (N,) numpy.ndarray
+            Global nonlinear force
+        dFdX : (N,N) numpy.ndarray
+            Derivative of `F` with respect to `X`.
+        
+        """
+        
+        unl = self.Q @ X
+        
+        fnl, dfnldunl, dfnlsliders_dunl = self.instant_force(unl, 
+                                                    np.zeros_like(unl),
+                                                    update_prev=update_hist)
+        
+        fnl = np.atleast_1d(fnl)
+        dfnldunl = np.atleast_2d(dfnldunl)
+            
+        F = self.T @ fnl
+        
+        dFdX = self.T @ dfnldunl @ self.Q
+        
+        return F, dFdX
+        
+
+    
+    def instant_force(self, unl, unldot, update_prev=False):
+        """
+        Calculates local force based on local nonlinear displacements.
+
+        Parameters
+        ----------
+        unl : (Nnl,) numpy.ndarray
+            Local nonlinear displacements to evaluate force at.
+        unldot : (Nnl,) numpy.ndarray
+            Local nonlinear velocities to evaluate force at.
+        update_prev : bool, optional
+            Flag to store the results of the evaluation for the start of the
+            subsequent step. 
+            The default is False.
+
+        Returns
+        -------
+        fnl : float
+            Evaluated local nonlinear forces.
+        dfnldunl : float
+            Derivative of `fnl` with respect to `unl`.
+        dfnlsliders_dunl : (Nsliders+1,) numpy.ndarray
+            Derivative of `fnl` at each slider with respect to `unl`.
+
+        Notes
+        -----
+        
+        Implementation only allows for a single nonlinear element, thus
+        shapes of first two outputs are reduced to scalar.
+        """
+        def _is_jax_array(x):
+            return hasattr(x, '__module__') and 'jax' in x.__module__
+        
+        # Stuck Force
+        fnlsliders = unl - self.up + self.fpsliders
+
+        # Mask of stuck sliders == places with unit derivative
+        dfnlsliders_dunl = np.less_equal(np.abs(fnlsliders), self.phisliders)
+        
+        if _is_jax_array(fnlsliders):
+            import jax.numpy as jnp
+            idxs = jnp.logical_not(dfnlsliders_dunl)
+            fnlsliders = fnlsliders.at[idxs].set(
+                self.phisliders[idxs] * jnp.sign(fnlsliders[idxs])
+            )
+        else:
+            idxs = np.logical_not(dfnlsliders_dunl)
+            fnlsliders[idxs] = self.phisliders[idxs] * np.sign(fnlsliders[idxs])
+
+        # # Additional derivative information does not need to be output:
+        # dfnlsliders_dup = -dfnlsliders_dunl
+        # dfnlsliders_dfp = dfnlsliders_dunl
+        
+        # Integration
+        fnl = fnlsliders @ self.sliderweights
+        dfnldunl = dfnlsliders_dunl @ self.sliderweights
+        
+        if update_prev:
+            # Update History
+            self.up = unl
+            self.fp = fnl
+            self.fpsliders = fnlsliders
+        
+        return fnl, dfnldunl, dfnlsliders_dunl
+    
+    def instant_force_harmonic(self, unl, unldot, h, cst, update_prev=False):
+        """
+        Evaluates the force at a instantaneous set of displacement and velocity
+        along with harmonic derivatives.
+        
+        Parameters
+        ----------
+        unl : (Nnl,) numpy.ndarray
+            Local nonlinear displacements to evaluate force at.
+        unldot : (Nnl,) numpy.ndarray
+            Local nonlinear velocities to evaluate force at.
+        h : 1D numpy.ndarray, sorted
+            List of harmonics used in subsequent analysis. Corresponds
+            to `Nhc` harmonic components.
+        cst : (Nhc,) numpy.ndarray
+            Evaluation of harmonics without coefficients at the given instant 
+            in time. 
+            If zeroth harmonic is included, the first entry is 1.0. 
+            Beyond that, it is cosine and then sine at the appropriate harmonic
+            for the given instant in time then the next harmonic etc.
+        update_prev : bool, optional
+            Flag to store the results of the evaluation for the start of the
+            subsequent step. 
+            The default is False.
+        
+        Returns
+        -------
+        fnl : (1,) numpy.ndarray
+            Local nonlinear forces
+        dfduh : (1, 1, Nhc) numpy.ndarray
+            Derivative of `fnl` with respect to displacement harmonic
+            coefficients.
+        dfdudh : (1, 1, Nhc) numpy.ndarray
+            Derivative of `fnl` with respect to velocities harmonic
+            coefficients.
+
+        Notes
+        -----
+        
+        Starts calculation based on `init_history_harmonic`.
+        
+        Only implemented for a single nonlinear element or `Nnl == 1`.
+        
+        """
+        
+        # Number of nonlinear DOFs
+        Nhc = hutils.Nhc(h)
+        
+        dfduh = np.zeros((Nhc))
+        # dfdudh = np.zeros((Nhc))
+        # dfslidersduh = np.zeros((Nhc))
+        
+        fnl, dfnldunl, dfnlsliders_dunl = self.instant_force(unl, unldot, update_prev=update_prev)
+        
+        fnl = np.atleast_1d(fnl)
+        
+        dfnlsliders_duh = np.einsum('i,j->ij', dfnlsliders_dunl, cst-self.dupduh) \
+                + dfnlsliders_dunl.reshape(-1,1)*self.dfpslidersduh # this line is dfnlsliders_dfslidersp*...
+        
+        dfduh = np.einsum('ij,i->j', dfnlsliders_duh, self.sliderweights) 
+        
+        dfduh = dfduh.reshape((1,1,-1))
+        dfdudh = np.zeros_like(dfduh)
+        
+        # Save derivatives into history for next call. 
+        self.dupduh = cst
+        self.dfpduh = dfduh
+        self.dfpslidersduh = dfnlsliders_duh 
+                
+        return fnl, dfduh, dfdudh
+
 
     def local_force_history_crit(self, unlt, unltdot, h, cst, unlth0, \
                                  max_repeats=2, atol=1e-10, rtol=1e-10):
@@ -289,7 +589,7 @@ class VectorIwan4(Iwan4Force):
         
         ft_crit, dfduh_crit, dfdudh_crit, fsliders_crit, dfslidersduh_crit\
                         = self.local_force_history_crit(unlt_crit, unltdot_crit, h, \
-                                                   cst_crit, unlth0, max_repeats=12, \
+                                                   cst_crit, unlth0, max_repeats=1, \
                                                    atol=1e-10, rtol=1e-10)
         
         # If one rewrote the Iwan4Force class, it may be faster to recalculate
@@ -358,3 +658,5 @@ class VectorIwan4(Iwan4Force):
                 
         
         return ft, dfduh, dfdudh
+
+

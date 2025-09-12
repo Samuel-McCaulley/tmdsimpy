@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import numpy as np
-from tmdsimpy.nlforces.arcstiffness import ArcStiffness
+from tmdsimpy.nlforces.arcstiffness_rewrite import ArcStiffnessRewrite
 from tmdsimpy.nlforces.vector_iwan4 import *
 from tmdsimpy.utils.harmonic import *
 import matplotlib.pyplot as plt
@@ -19,27 +19,28 @@ from sdof_iwan_epmc import sdof_uwxa_full
 import tmdsimpy.nlutils as nlutils
 from scipy import io as sio
 import time
+
+os.system('clear')
+
 #%% Iwan Modeling
 
-M = np.diag([1])
+M = np.diag([1, 1])
 C = M*0.005
 c = 0.005
 
-K = 1 * np.array([
-    [1]
-])
+K = 1 * np.array([[100, -1], [-1, 10]])
 
 
 Ndof = M.shape[0]
 
 
-Q = np.array([[1]])
+Q = np.array([[-1, 1]])
 T = Q.T
 
-kt = 10000
-Fs = 100  # N, Match Jenkins
-chi = -0.3  # Have a more full hysteresis loop than chi=0.0
-beta = 0.0  # Smooth Transition
+kt = 10
+Fs = 0.1  # N, Match Jenkins
+chi = 0.0  # Have a more full hysteresis loop than chi=0.0
+beta = 0 # Smooth Transition
 
 iwan_force = VectorIwan4(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta)
 #iwan_force1 = VectorIwan4(np.atleast_2d(Q[1, :]), np.atleast_2d(T[:, 1]).T, kt, Fs, chi, beta)
@@ -49,18 +50,18 @@ vib_sys.add_nl_force(iwan_force)
 #vib_sys.add_nl_force(iwan_force1)
 ref_nlforces = vib_sys.nonlinear_forces
 
-Astart = -8
+Astart = -10
 Aend = 3
 
 # Normal - settings for higher accuracy as used in previous papers
 h_max = 1  # harmonics 0, 1, 2, 3
-Nt = 1 << 7  # 2**7 = 128 AFT steps
+Nt = 1 << 10  # 2**7 = 128 AFT steps
 h = np.array(range(h_max+1))
 Nhc = hutils.Nhc(h)
 mode_ind = 0
-ds = 0.08
-dsmax = 0.15
-dsmin = 0.002
+ds = 0.008
+dsmax = 0.03
+dsmin = 0.005
 # Adjust weighting of amplitude v. other in continuation to hopefully
 # reduce turning around. Higher puts more emphasis on continuation
 # parameter (amplitude)
@@ -124,7 +125,7 @@ Uwxa0[-3] = np.sqrt(np.real(eigvals[mode_ind]))
 # Initial Damping (low amplitude as prescribed)
 zeta = c  # This is what mass/stiff prop damping should give
 Uwxa0[-2] = 2*Uwxa0[-3]*zeta
-
+#Uwxa0[-2] = 0 #This is the modification to damping that is not originally correct -- I think
 
 Uwxa0[-1] = Astart
 
@@ -133,9 +134,9 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
                                                             calc_grad=calc_grad)
 
 
-epmc_config = {'max_steps': 300,  # balance with reform_freq
+epmc_config = {'max_steps': 100,  # balance with reform_freq
                'reform_freq': 1,  # >1 corresponds to BFGS
-               'verbose': True,
+               'verbose': False,
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
                'etol': None,
@@ -144,14 +145,16 @@ epmc_config = {'max_steps': 300,  # balance with reform_freq
                'etol_rel': None,
                'stopping_tol': ['xtol'],  # stop on xtol
                # accept solution on these
-               'accepting_tol': ['xtol_rel', 'rtol']
+               'accepting_tol': ['xtol_rel', 'rtol'],
+               'armijo_iters': 10,
+               'armijo_dilatation': 0.5
                }
 
 # Custom Newton-Raphson solver
 epmc_solver = NonlinearSolverOMP(config=epmc_config)
 
 continue_config = {'DynamicCtoP': True,
-                   'TargetNfev': 4,
+                   'TargetNfev': 8,
                    'MaxSteps': 5000,  # May need more depending on ds and dsmin
                    'dsmin': dsmin,
                    'dsmax': dsmax,
@@ -203,17 +206,18 @@ plt.show()
 plt.plot(Uwxa_full_iwan[:, -1], Uwxa_full_iwan[:, -2])
 plt.show()
 
+#breakpoint()
 #%% Sigmoid Stiffness Testing
 
 harmonic_norm_iwan = nlutils.nonlinear_harmonic_norm(Uwxa_full_iwan, Q) 
 log_hnorm_iwan = np.log10(harmonic_norm_iwan)
 
-B, S, K_T = ArcStiffness.gather_parameters_from_backbone(Q, Uwxa_full_iwan, M, K)
+#B, S, K_T = ArcStiffness.gather_parameters_from_backbone(Q, Uwxa_full_iwan, M, K)
 
 vib_sys = VibrationSystem(M, K, C=C)
 
 for i in range(Q.shape[0]):
-    vib_sys.add_nl_force(ArcStiffness(Q[[i], :], T[:, [i]], K_T, B[i], S[i]))
+    vib_sys.add_nl_force(ArcStiffnessRewrite(np.atleast_2d(Q[0, :]), np.atleast_2d(T[:, 0]).T, kt, Fs, chi, beta))
 
 test_nlforces = vib_sys.nonlinear_forces
 
@@ -229,7 +233,6 @@ X0 = np.real(eigvecs_pre[:, mode_ind])
 pre_fun = lambda U, calc_grad=True : vib_sys.static_res(U, Fv)
 R0, dR0dX = pre_fun(X0)
 print('Residual norm of initial guess: {:.4e}'.format(np.linalg.norm(dR0dX)))
-
 Xpre, R, dRdX, sol = static_solver.nsolve(pre_fun, X0,
                                           verbose=True, xtol=1e-13)
 
@@ -253,9 +256,9 @@ def epmc_fun(Uwxa, calc_grad=True): return vib_sys.epmc_res(Uwxa, Fl, h, Nt=Nt,
                                                             calc_grad=calc_grad)
 
 
-epmc_config = {'max_steps': 25,  # balance with reform_freq
+epmc_config = {'max_steps': 100,  # balance with reform_freq
                'reform_freq': 1,  # >1 corresponds to BFGS
-               'verbose': True,
+               'verbose': False,
                'xtol': None,  # Just use the one passed from continuation
                'rtol': 1e-9,
                'etol': None,
@@ -264,7 +267,9 @@ epmc_config = {'max_steps': 25,  # balance with reform_freq
                'etol_rel': None,
                'stopping_tol': ['xtol'],  # stop on xtol
                # accept solution on these
-               'accepting_tol': ['xtol_rel', 'rtol']
+               'accepting_tol': ['xtol_rel', 'rtol'],
+               'armijo_iters': 11,
+               'armijo_dilitation': 0.1
                }
 
 # Custom Newton-Raphson solver
@@ -272,7 +277,7 @@ epmc_solver = NonlinearSolverOMP(config=epmc_config)
 
 continue_config = {'DynamicCtoP': True,
                    'TargetNfev': 4,
-                   'MaxSteps': 5000,  # May need more depending on ds and dsmin
+                   'MaxSteps': 2500,  # May need more depending on ds and dsmin
                    'dsmin': dsmin,
                    'dsmax': dsmax,
                    'verbose': 1,

@@ -123,6 +123,8 @@ class NonlinearSolverOMP(NonlinearSolver):
                         'accepting_tol' : [],
                         'line_search_iters' : 0,
                         'line_search_tol' : 0.5,
+                        'armijo_iters': 0,
+                        'armijo_dilatation': 0.5,
                         'line_search_same_sign' : True
                         }
         
@@ -428,6 +430,78 @@ class NonlinearSolverOMP(NonlinearSolver):
                 
         return alpha, sol
     
+    
+    
+    def armijo_backtrack(self, fun, X, Rx, s, delta=0.5, epsilon=0.99, max_iter = 4):
+        """
+        Line search algorithm to help in the numerical solution to a set of 
+        nonlinear equations. This is used by `nsolve`.
+
+        Parameters
+        ----------
+        fun : function
+            Function to be solved, returns 
+            `R=fun(X, calc_grad={True or False})[0]`.
+            Must accept the input argument `calc_grad=True`
+            and `calc_grad=False`.
+            Function may be a lambda function that completely 
+            ignores `calc_grad`.
+        X : (N,) numpy.ndarray
+            Values of unknowns at initial point.
+        Rx : (N,) numpy.ndarray
+            Residual at `X`, equal to `fun(X)[0]`.
+        s : (N,) numpy.ndarray
+            Step direction of interest, generally calculated based on gradient
+            solution step.
+        delta : scalar, 0 < delta < 1
+            Dilatation factor in which alpha is multiplied for backtracking
+        epsilon : scalar, 0 < delta <= 1
+            Criteria for residual minimization
+        max_iter : positive integer
+            maximum number of steps for backtracking
+
+        Returns
+        -------
+        alpha : float
+            Fraction of `deltaX` step that should be taken. Recommended update
+            is `X = X + alpha*deltaX`
+        sol : dict
+            Description of final solution state. Has keys of 
+            ['message', 'nfev'].
+            'nfev' is the number of function evaluations completed. 
+            'message' describes how line search exited.
+        """
+        # Start with full step
+        alpha = 1.0
+        norm_Rx = np.linalg.norm(Rx, 2)
+        nfev = 0
+        message = "max_iter reached"
+        max_iter_reached = True
+    
+        # Backtracking loop
+        for k in range(max_iter):
+            X_trial = X + alpha * s
+            R_trial = fun(X_trial, calc_grad=False)[0]
+            nfev += 1
+            norm_Rtrial = np.linalg.norm(R_trial, 2)
+    
+            if self.config.get("verbose", True):
+                print(f"[armijo] iter={k}, alpha={alpha:.3e}, "
+                      f"‖R_trial‖={norm_Rtrial:.3e}, "
+                      f"‖R‖={norm_Rx:.3e}")
+    
+            # Armijo-like sufficient decrease condition
+            if norm_Rtrial <= epsilon * norm_Rx:
+                message = "sufficient decrease"
+                max_iter_reached = False
+                break
+            else:
+                alpha *= delta  # shrink step further
+    
+        sol = {"message": message, "nfev": nfev, "max_iter_reached": max_iter_reached}
+        return alpha, sol
+        
+        
     def nsolve(self, fun, X0, verbose=None, xtol=None, Dscale=1.0):
         """
         Numerically solves multiple nonlinear equations to find roots.
@@ -591,9 +665,12 @@ class NonlinearSolverOMP(NonlinearSolver):
                 R,dRdX = fun_R_dRdX(X)
                 sol['nfev'] += 1
                 sol['njev'] += 1
-                
-                ##TESTING LOOP
+                '''
                 if i >= 20:
+                    breakpoint()
+                '''
+                ##TESTING LOOP
+                if self.config['armijo_iters'] > 10:
                     # Gather debug variables
                     import sys
                     import pickle
@@ -669,17 +746,29 @@ class NonlinearSolverOMP(NonlinearSolver):
                 if verbose: print('Stopping with NaN Step Direction')
                 break
             
-            ###### # Tolerance Calculations
-            # Tolerances should not include line search scaling of deltaX
-            u_curr = np.sqrt(deltaX @ deltaX)
-            e_curr = R @ deltaXminus1
-            r_curr = np.sqrt(R @ R)
             
             ###### # Line search Solution
             if self.config['line_search_iters'] > 0:
                 alpha_ls,sol_ls = self.line_search(fun, X, R, deltaX)
                 
                 deltaX = alpha_ls * deltaX
+            armijo_converged = False
+            ###### # Armijo Backtracking
+            if self.config['armijo_iters'] > 0:
+                alpha_armijo, sol_armijo = self.armijo_backtrack(fun, X, R, deltaX, 
+                                                                 delta=self.config['armijo_dilatation'],
+                                                                 max_iter=self.config['armijo_iters'])
+                
+                deltaX = alpha_armijo * deltaX
+                armijo_converged = sol_armijo['max_iter_reached']
+                
+                
+            ###### # Tolerance Calculations
+            # Tolerances should not include line search scaling of deltaX
+            u_curr = np.sqrt(deltaX @ deltaX)
+            e_curr = R @ deltaXminus1
+            r_curr = np.sqrt(R @ R)
+
             
             ###### # Update Solution
             X = X + deltaX
