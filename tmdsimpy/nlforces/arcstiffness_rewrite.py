@@ -589,7 +589,7 @@ class ArcStiffnessRewrite(HystereticForce):
         
         ft_crit, dfduh_crit, dfdudh_crit, fsliders_crit, dfslidersduh_crit\
                         = self.local_force_history_crit(unlt_crit, unltdot_crit, h, \
-                                                   cst_crit, unlth0, max_repeats=1, \
+                                                   cst_crit, unlth0, max_repeats=2, \
                                                    atol=1e-10, rtol=1e-10)
         
         # If one rewrote the Iwan4Force class, it may be faster to recalculate

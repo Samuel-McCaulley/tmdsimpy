@@ -125,7 +125,8 @@ class NonlinearSolverOMP(NonlinearSolver):
                         'line_search_tol' : 0.5,
                         'armijo_iters': 0,
                         'armijo_dilatation': 0.5,
-                        'line_search_same_sign' : True
+                        'line_search_same_sign' : True,
+                        'stuck_debug': False
                         }
         
         
@@ -665,12 +666,9 @@ class NonlinearSolverOMP(NonlinearSolver):
                 R,dRdX = fun_R_dRdX(X)
                 sol['nfev'] += 1
                 sol['njev'] += 1
-                '''
-                if i >= 20:
-                    breakpoint()
-                '''
-                ##TESTING LOOP
-                if self.config['armijo_iters'] > 10:
+                
+                if i >= 10 and self.config['stuck_debug'] == True:
+                    print("logged")
                     # Gather debug variables
                     import sys
                     import pickle
@@ -760,7 +758,9 @@ class NonlinearSolverOMP(NonlinearSolver):
                                                                  max_iter=self.config['armijo_iters'])
                 
                 deltaX = alpha_armijo * deltaX
-                armijo_converged = sol_armijo['max_iter_reached']
+                if np.sqrt(deltaX @ deltaX) <= self.config['xtol']:
+                    armijo_converged = True
+                #armijo_converged = sol_armijo['max_iter_reached']
                 
                 
             ###### # Tolerance Calculations
@@ -816,7 +816,7 @@ class NonlinearSolverOMP(NonlinearSolver):
             converged = _check_convg(self.config['stopping_tol'], self.config, 
                                      r_curr, e_curr, u_curr, 
                                      r_curr/r0, e_curr/e0, u_curr/u0)
-            if converged:
+            if converged or armijo_converged:
                 if verbose:
                     print('Converged!')
                 sol['message'] = 'Converged'

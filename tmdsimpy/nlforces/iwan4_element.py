@@ -358,14 +358,13 @@ class Iwan4Force(HystereticForce):
         # dfslidersduh = np.zeros((Nhc))
         
         fnl, dfnldunl, dfnlsliders_dunl = self.instant_force(unl, unldot, update_prev=update_prev)
-        
         fnl = np.atleast_1d(fnl)
         
         dfnlsliders_duh = np.einsum('i,j->ij', dfnlsliders_dunl, cst-self.dupduh) \
                 + dfnlsliders_dunl.reshape(-1,1)*self.dfpslidersduh # this line is dfnlsliders_dfslidersp*...
         
         dfduh = np.einsum('ij,i->j', dfnlsliders_duh, self.sliderweights) 
-        
+
         dfduh = dfduh.reshape((1,1,-1))
         dfdudh = np.zeros_like(dfduh)
         

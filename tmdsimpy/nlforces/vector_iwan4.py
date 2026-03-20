@@ -7,7 +7,7 @@ import numpy as np
 from ..utils import harmonic as hutils
 
 from .iwan4_element import Iwan4Force 
-
+import matplotlib.pyplot as plt
 
 class VectorIwan4(Iwan4Force):
     """
@@ -190,10 +190,13 @@ class VectorIwan4(Iwan4Force):
             
             acheck = np.abs(ft[ti, :] - fp)
             rcheck = np.abs(acheck / (ft[ti, :]+np.finfo(float).eps) )
-            
+            acheck = 10
+            rcheck = 10
             fp = ft[ti, :]
         
         return ft, dfduh, dfdudh, fsliders, dfslidersduh
+    
+    def nl_force_type(self): return 1
     
         
     def local_force_history(self, unlt, unltdot, h, cst, unlth0, max_repeats=2, \
@@ -289,7 +292,7 @@ class VectorIwan4(Iwan4Force):
         
         ft_crit, dfduh_crit, dfdudh_crit, fsliders_crit, dfslidersduh_crit\
                         = self.local_force_history_crit(unlt_crit, unltdot_crit, h, \
-                                                   cst_crit, unlth0, max_repeats=12, \
+                                                   cst_crit, unlth0, max_repeats=2, \
                                                    atol=1e-10, rtol=1e-10)
         
         # If one rewrote the Iwan4Force class, it may be faster to recalculate
@@ -306,7 +309,7 @@ class VectorIwan4(Iwan4Force):
         crit_inds = np.append(crit_inds, crit_inds[0]) # Wrap around without logic in for loop below
         
         # EVERYTHING BELOW HERE IS TRIVIALLY PARALLELIZABLE
-        
+
         # Loop over the set of all crit points and evaluate their subsequent history points.
         # Alternative try doing something fancy with creating an index array, 
         # but that's just as likely to either add a bunch of memory or mess up vectorization.

@@ -89,6 +89,19 @@ def paramlog(params, lpsci, base = 10):
     return [np.emath.logn(base, params[i]) if lpsci[i] == 1 else params[i] for i in range(len(params))]
 
 
+def first_order_exponential(u0, uI, tau, t, negative_control = True):
+    '''
+    Returns a first order exponential system of form 
+    
+    u(t) = u0 + (uI - u0)exp(-t/tau)
+    
+    negative control requires inputs less than 0 are assigned to u0
+    '''
+    if negative_control and t < 0: return u0
+    
+    return uI + (u0 - uI)* np.exp(-t/tau)
+
+
 def transform_to_nonlinear(matrix, Q, Ndof, Nnl):
     """
     Transform blocks of Ndof columns in the input matrix into nonlinear blocks using the Q matrix.
